@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GCP ACE Quiz Quest</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Mozilla PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Floating Ambient Background Elements -->
+        <div class="ambient-glow glow-1"></div>
+        <div class="ambient-glow glow-2"></div>
+
+        <!-- App Header -->
+        <header class="app-header">
+            <div class="logo">
+                <i class="fa-solid fa-cloud-bolt logo-icon"></i>
+                <span class="logo-text">GCP ACE <span class="accent-text">Quest</span></span>
+            </div>
+            <div class="header-stats" id="header-stats" style="display: none;">
+                <div class="stat-badge">
+                    <i class="fa-solid fa-trophy"></i>
+                    <span id="high-score-display">High Score: 0</span>
+                </div>
+                <div class="stat-badge">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span id="accuracy-display">Accuracy: 0%</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- 1. Lobby Screen -->
+            <section id="lobby-screen" class="screen active">
+                <div class="glass-card welcome-card">
+                    <h1>Ready to Ace the GCP exam?</h1>
+                    <p class="welcome-subtitle">A gamified Kahoot-style quiz to master your GCP Associate Cloud Engineer knowledge!</p>
+
+                    <!-- Auto-loading indicator (shown while default PDF is parsed) -->
+                    <div id="pdf-upload-section" class="auto-load-zone">
+                        <div class="auto-load-spinner">
+                            <div class="custom-spinner small-spinner"></div>
+                            <i class="fa-solid fa-cloud-arrow-down auto-load-icon"></i>
+                        </div>
+                        <h3>Loading question database…</h3>
+                        <p class="auto-load-sub">Parsing GCP ACE exam questions automatically.</p>
+                        <!-- Hidden fallback file input -->
+                    </div>
+
+                    <!-- Database Ready Section -->
+                    <div id="database-ready-section" class="db-ready-zone" style="display: none;">
+                        <div class="db-status-banner">
+                            <i class="fa-solid fa-database db-icon"></i>
+                            <div>
+                                <h3 id="db-question-count">Database Ready: 336 Questions Loaded</h3>
+                                <p>Source: <span id="db-source-name">kahoot.pdf</span></p>
+                            </div>
+                        </div>
+                        
+                        <!-- Game Config -->
+                        <div class="game-config">
+                            <div class="config-group">
+                                <label><i class="fa-solid fa-gamepad"></i> Game Mode</label>
+                                <div class="mode-selector">
+                                    <button class="mode-btn active" data-mode="classic">
+                                        <h4>Classic</h4>
+                                        <p>Set number of questions. Focus on practice.</p>
+                                    </button>
+                                    <button class="mode-btn" data-mode="endless">
+                                        <h4>Endless</h4>
+                                        <p>Play until 3 wrong answers. Survival challenge.</p>
+                                    </button>
+                                    <button class="mode-btn" data-mode="exam">
+                                        <h4>Mock Exam</h4>
+                                        <p>50 timed questions with topic breakdown.</p>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="config-row">
+                                <div class="config-group" id="question-count-group">
+                                    <label for="question-count-select"><i class="fa-solid fa-list-ol"></i> Question count</label>
+                                    <select id="question-count-select" class="form-input">
+                                        <option value="10">10 Questions</option>
+                                        <option value="20">20 Questions</option>
+                                        <option value="50">50 Questions</option>
+                                        <option value="all">All Questions</option>
+                                    </select>
+                                </div>
+                                <div class="config-group">
+                                    <label for="timer-select"><i class="fa-solid fa-stopwatch"></i> Timer per Question</label>
+                                    <select id="timer-select" class="form-input">
+                                        <option value="20">20 Seconds</option>
+                                        <option value="30" selected>30 Seconds</option>
+                                        <option value="60">60 Seconds</option>
+                                        <option value="0">No Timer</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="lobby-actions">
+                            <button id="start-game-btn" class="btn btn-primary btn-large">
+                                <i class="fa-solid fa-play"></i> Start Quest
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats Dashboard -->
+                <div id="stats-dashboard" class="glass-card stats-card" style="display: none;">
+                    <h2>Your Progress</h2>
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <span class="stat-val" id="stats-total-played">0</span>
+                            <span class="stat-lbl">Games Played</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-val" id="stats-total-questions">0</span>
+                            <span class="stat-lbl">Questions Solved</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-val" id="stats-avg-accuracy">0%</span>
+                            <span class="stat-lbl">Avg. Accuracy</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. Parsing Screen -->
+            <section id="parse-screen" class="screen">
+                <div class="glass-card parse-card">
+                    <div class="spinner-container">
+                        <div class="custom-spinner"></div>
+                        <i class="fa-solid fa-cloud-arrow-down spinner-center-icon"></i>
+                    </div>
+                    <h2>Ingesting GCP Exam PDF...</h2>
+                    <p class="parse-subtitle">Analyzing page content, formatting code blocks, and extracting answers.</p>
+                    
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="parse-progress-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="parse-status-row">
+                        <span id="parse-page-status">Processing Page 0/0...</span>
+                        <span id="parse-count-status">0 Questions extracted</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. Game Screen -->
+            <section id="game-screen" class="screen">
+                <!-- Game Header Info -->
+                <div class="game-meta-row">
+                    <div class="game-progress">
+                        <span class="meta-label">QUESTION</span>
+                        <span class="meta-value" id="game-q-index">1/10</span>
+                    </div>
+                    <div class="game-score">
+                        <span class="meta-label">SCORE</span>
+                        <span class="meta-value" id="game-score-val">0</span>
+                    </div>
+                    <div class="game-timer-container">
+                        <div class="timer-circle-wrap">
+                            <svg class="timer-svg" viewBox="0 0 36 36">
+                                <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                <path class="circle-fill" id="timer-progress" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            </svg>
+                            <div class="timer-text" id="timer-sec">30</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Game Container -->
+                <div class="game-layout">
+                    <!-- Question Display -->
+                    <div class="glass-card question-card">
+                        <div class="question-header">
+                            <span class="badge badge-accent" id="question-id-badge">Q1</span>
+                            <div class="question-header-actions">
+                                <button id="image-reference-btn" class="btn btn-secondary" style="display:none;">
+                                    <i class="fa-solid fa-image"></i> Reference Image
+                                </button>
+                                <button id="lifeline-btn" class="btn btn-lifeline">
+                                    <i class="fa-solid fa-users"></i> Ask Community (1)
+                                </button>
+                            </div>
+                        </div>
+                        <div class="question-body-scroll">
+                            <div class="question-text" id="question-text-content">
+                                You need to create a custom VPC with a single subnet...
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Answers Grid -->
+                    <div class="answers-grid" id="answers-grid">
+                        <button class="answer-card option-a" data-option="A">
+                            <div class="shape triangle"></div>
+                            <span class="option-letter">A</span>
+                            <span class="option-text" id="option-a-text">0.0.0.0/0</span>
+                        </button>
+                        <button class="answer-card option-b" data-option="B">
+                            <div class="shape diamond"></div>
+                            <span class="option-letter">B</span>
+                            <span class="option-text" id="option-b-text">10.0.0.0/8</span>
+                        </button>
+                        <button class="answer-card option-c" data-option="C">
+                            <div class="shape circle"></div>
+                            <span class="option-letter">C</span>
+                            <span class="option-text" id="option-c-text">172.16.0.0/12</span>
+                        </button>
+                        <button class="answer-card option-d" data-option="D">
+                            <div class="shape square"></div>
+                            <span class="option-letter">D</span>
+                            <span class="option-text" id="option-d-text">192.168.0.0/16</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Hints/Feedback Overlay (Bottom Slider) -->
+                <div class="feedback-overlay" id="feedback-overlay">
+                    <div class="feedback-content">
+                        <div class="feedback-status-row">
+                            <div class="feedback-title">
+                                <i class="fa-solid" id="feedback-icon"></i>
+                                <span id="feedback-message">Correct!</span>
+                            </div>
+                            <div class="points-earned" id="feedback-points">+950 pts</div>
+                        </div>
+                        
+                        <div class="feedback-details">
+                            <div class="correct-answer-is">
+                                <strong>Correct Answer:</strong> <span id="correct-answer-letter">B</span>
+                            </div>
+                            <div id="hint-vote-chart-container" class="vote-chart-container" style="display: none;">
+                                <h4>Community Vote Distribution:</h4>
+                                <div class="vote-bars" id="vote-bars-list">
+                                    <!-- Dynamic vote bars -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="feedback-actions">
+                            <button id="next-question-btn" class="btn btn-primary">
+                                Next <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="image-popup-overlay" class="image-popup-overlay" style="display:none;">
+                    <div class="image-popup-card">
+                        <button id="close-image-popup" class="btn btn-link close-image-btn">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                        <div class="popup-title">Reference Image for <span id="image-popup-question-id"></span></div>
+                        <img id="question-image-preview" src="about:blank" alt="Question reference image" />
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. Leaderboard Between Questions -->
+            <section id="leaderboard-screen" class="screen">
+                <div class="glass-card leaderboard-card">
+                    <h2>Standings</h2>
+                    <p class="leaderboard-subtitle">How are you matching up against the competition?</p>
+
+                    <div class="leaderboard-list" id="leaderboard-list">
+                        <!-- Simulated player ranks -->
+                    </div>
+
+                    <button id="leaderboard-next-btn" class="btn btn-primary btn-large">
+                        Continue <i class="fa-solid fa-forward"></i>
+                    </button>
+                </div>
+            </section>
+
+            <!-- 5. Game Over Screen -->
+            <section id="game-over-screen" class="screen">
+                <!-- Podium Showcase -->
+                <div class="podium-showcase">
+                    <div class="podium-title">
+                        <i class="fa-solid fa-trophy winner-gold"></i>
+                        <h1 id="podium-headline">You placed 1st!</h1>
+                    </div>
+                    <div class="podium-container">
+                        <!-- 2nd place -->
+                        <div class="podium-step step-2">
+                            <div class="podium-player" id="podium-p2-name">CloudMaster</div>
+                            <div class="podium-pillar">
+                                <div class="pillar-label">2</div>
+                            </div>
+                            <div class="podium-score" id="podium-p2-score">18,450</div>
+                        </div>
+                        <!-- 1st place -->
+                        <div class="podium-step step-1">
+                            <div class="podium-player" id="podium-p1-name">YOU</div>
+                            <div class="podium-pillar">
+                                <div class="pillar-label"><i class="fa-solid fa-crown"></i></div>
+                            </div>
+                            <div class="podium-score" id="podium-p1-score">22,300</div>
+                        </div>
+                        <!-- 3rd place -->
+                        <div class="podium-step step-3">
+                            <div class="podium-player" id="podium-p3-name">KubernetesGuru</div>
+                            <div class="podium-pillar">
+                                <div class="pillar-label">3</div>
+                            </div>
+                            <div class="podium-score" id="podium-p3-score">15,120</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats summary -->
+                <div class="glass-card game-summary-card">
+                    <h2>Quest Results Summary</h2>
+                    <div class="results-grid">
+                        <div class="result-box">
+                            <span class="result-val" id="result-score">22,300</span>
+                            <span class="result-lbl">Final Score</span>
+                        </div>
+                        <div class="result-box">
+                            <span class="result-val" id="result-accuracy">90%</span>
+                            <span class="result-lbl">Accuracy</span>
+                        </div>
+                        <div class="result-box">
+                            <span class="result-val" id="result-rank">#1 / 5</span>
+                            <span class="result-lbl">Final Position</span>
+                        </div>
+                    </div>
+
+                    <!-- Mistakes review list -->
+                    <div class="mistakes-container" id="mistakes-review-container" style="display: none;">
+                        <h3>Review Questions You Got Wrong</h3>
+                        <div class="mistakes-list" id="mistakes-review-list">
+                            <!-- Mistakes lists -->
+                        </div>
+                    </div>
+
+                    <div class="game-over-actions">
+                        <button id="restart-game-btn" class="btn btn-primary">
+                            <i class="fa-solid fa-rotate-left"></i> Play Again
+                        </button>
+                        <button id="back-lobby-btn" class="btn btn-secondary">
+                            <i class="fa-solid fa-house"></i> Return to Lobby
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <!-- Custom Game Logic & Parser Script -->
+    <script src="app.js"></script>
+</body>
+</html>

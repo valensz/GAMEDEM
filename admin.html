@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin - Kahoot DB</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    body { padding: 24px; }
+    .admin-panel { max-width: 900px; margin: 0 auto; }
+    .card { background: var(--bg-card); padding: 18px; border-radius: 10px; border:1px solid var(--border-color); }
+    .controls { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    input[type="number"] { width:96px; }
+    .question-area { margin-top:16px; }
+    .option-list { display:grid; gap:10px; margin-top:12px; }
+    .status { margin-top:12px; font-size:0.95rem; color:var(--text-secondary); }
+    .btn { padding:8px 12px; border-radius:6px; cursor:pointer; }
+    .btn-primary { background:var(--accent); color:white; border:none; }
+    .answer-card { padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-card); text-align: left; transition: background 0.2s, border-color 0.2s, color 0.2s; }
+    .answer-card.correct { background: #d4f8d4; border-color: #3b9f3b; color: #0f460f; }
+    .answer-card.incorrect { background: #f8d4d4; border-color: #c93b3b; color: #5a1111; }
+    .answer-card.multi-selected { outline: 2px solid var(--accent); }
+  </style>
+</head>
+<body class="dark-theme">
+  <div class="admin-panel" id="admin-panel" style="display:block;">
+    <h1>Admin - Question DB Manager</h1>
+    <div class="card">
+      <h3>Upload PDF (used as question database)</h3>
+      <div class="controls">
+        <input type="file" id="admin-pdf-input" accept="application/pdf">
+        <button id="parse-pdf-btn" class="btn btn-primary">Parse & Save</button>
+        <div id="parse-status" class="status"></div>
+      </div>
+      <p class="status">Current cached questions: <span id="cached-count">0</span> (source: <span id="cached-source">none</span>)</p>
+      <div style="margin-top:8px;">
+        <button id="change-pw-btn" class="btn">Change Admin Password</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>Question Runner (Admin Test Mode)</h3>
+      <div class="controls">
+        <label>Question # <input type="number" id="q-number" min="1" value="1"></label>
+        <button id="run-q-btn" class="btn">Run Question</button>
+        <button id="clear-cache-btn" class="btn">Clear Cached DB</button>
+        <div id="runner-status" class="status"></div>
+      </div>
+
+      <div class="question-area" id="question-area" style="display:none;">
+        <h4 id="q-title"></h4>
+        <div id="multi-hint" class="status" style="margin-bottom:8px;display:none;"></div>
+        <div id="q-body"></div>
+        <button id="admin-image-reference-btn" class="btn btn-secondary" style="display:none; margin-top: 12px;">
+          <i class="fa-solid fa-image"></i> Show Reference Image
+        </button>
+        <div class="option-list" id="option-list"></div>
+        <div style="margin-top:12px;">
+          <button id="check-answer-btn" class="btn btn-primary">Check Answer</button>
+          <button id="reset-selection-btn" class="btn">Reset</button>
+        </div>
+        <div id="check-result" class="status"></div>
+      </div>
+      <div id="admin-image-popup-overlay" class="image-popup-overlay" style="display:none;">
+        <div class="image-popup-card">
+          <button id="admin-close-image-popup" class="btn btn-link close-image-btn">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+          <div class="popup-title">Reference Image for <span id="admin-image-popup-question-id"></span></div>
+          <img id="admin-question-image-preview" src="about:blank" alt="Question reference image" />
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top:18px; font-size:0.9rem; color:var(--text-secondary)">Note: uploading a PDF will parse it client-side and store the parsed question DB in <strong>localStorage</strong> as `gcp_questions_db` and set `gcp_db_source` to the uploaded filename. The main app will use that cached DB.</p>
+  </div>
+
+<script>
+// Copy of parsePdfContent from the app to extract questions (adapted)
+async function parsePdfContent(arrayBuffer, onProgress) {
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const numPages = pdf.numPages;
+    let fullText = '';
+    for (let i = 1; i <= numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        let lastY = null;
+        let pageText = '';
+        for (const item of textContent.items) {
+            const currentY = item.transform[5];
+            if (lastY !== null && Math.abs(currentY - lastY) > 8) {
+                pageText += '\n';
+            }
+            pageText += item.str + ' ';
+            lastY = currentY;
+        }
+        fullText += `\n\n--- PAGE ${i} ---\n\n` + pageText;
+        if (onProgress) onProgress(i, numPages, fullText);
+    }
+
+    const parts = fullText.split(/Question\s+#/i);
+    const parsedQuestions = [];
+    for (let i = 1; i < parts.length; i++) {
+        const part = parts[i].trim();
+        if (!part) continue;
+        try {
+            const numMatch = part.match(/^(\d+)/);
+            if (!numMatch) continue;
+            const qId = parseInt(numMatch[1]);
+            const ansIndex = part.search(/Correct\s+Answer\s*:/i);
+            if (ansIndex === -1) continue;
+            const bodyAndOptions = part.substring(0, ansIndex).trim();
+            const answerAndVotes = part.substring(ansIndex).trim();
+            let correctAnswer = '';
+            const ansMatch = answerAndVotes.match(/Correct\s+Answer\s*:\s*([A-E]+)/i);
+            if (ansMatch) correctAnswer = ansMatch[1].trim().toUpperCase(); else continue;
+
+            const optARegex = /[\r\n\s]+A\.\s+/;
+            const optBRegex = /[\r\n\s]+B\.\s+/;
+            const optCRegex = /[\r\n\s]+C\.\s+/;
+            const optDRegex = /[\r\n\s]+D\.\s+/;
+            const optERegex = /[\r\n\s]+E\.\s+/;
+            const idxA = bodyAndOptions.search(optARegex);
+            const idxB = bodyAndOptions.search(optBRegex);
+            const idxC = bodyAndOptions.search(optCRegex);
+            const idxD = bodyAndOptions.search(optDRegex);
+            const idxE = bodyAndOptions.search(optERegex);
+            if (idxA === -1 || idxB === -1 || idxC === -1 || idxD === -1) continue;
+            let questionText = bodyAndOptions.substring(0, idxA).trim();
+            const lines = questionText.split('\n');
+            if (lines.length > 0 && lines[0].toLowerCase().includes('topic')) lines.shift();
+            questionText = lines.join('\n').trim();
+            // Extract options
+            const optA = bodyAndOptions.substring(idxA, idxB).replace(/^[\r\n\s]*A\.\s+/, '').trim();
+            const optB = bodyAndOptions.substring(idxB, idxC).replace(/^[\r\n\s]*B\.\s+/, '').trim();
+            const optC = bodyAndOptions.substring(idxC, idxD).replace(/^[\r\n\s]*C\.\s+/, '').trim();
+            const optD = (idxE === -1) ? bodyAndOptions.substring(idxD).replace(/^[\r\n\s]*D\.\s+/, '').trim() : bodyAndOptions.substring(idxD, idxE).replace(/^[\r\n\s]*D\.\s+/, '').trim();
+            const optE = (idxE === -1) ? null : bodyAndOptions.substring(idxE).replace(/^[\r\n\s]*E\.\s+/, '').trim();
+
+            const options = { A: optA, B: optB, C: optC, D: optD };
+            if (optE) options.E = optE;
+
+            parsedQuestions.push({ id: qId, question: questionText, options, answer: correctAnswer });
+        } catch (e) {
+            console.warn('Failed to parse a question chunk', e);
+            continue;
+        }
+    }
+    return parsedQuestions;
+}
+
+function loadCached() {
+    const cached = localStorage.getItem('gcp_questions_db');
+    const source = localStorage.getItem('gcp_db_source') || 'kahoot.pdf';
+    if (cached) {
+        const questions = JSON.parse(cached);
+        document.getElementById('cached-count').textContent = questions.length;
+        document.getElementById('cached-source').textContent = source;
+        return questions;
+    }
+    document.getElementById('cached-count').textContent = 0;
+    document.getElementById('cached-source').textContent = 'none';
+    return null;
+}
+
+function encodeImagePath(url) {
+    return url.split('/').map(part => encodeURIComponent(part)).join('/');
+}
+
+function encodeImagePath(url) {
+    return url.split('/').map(part => encodeURIComponent(part)).join('/');
+}
+
+async function adminImageUrlExists(url) {
+    return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve(true);
+        img.onerror = () => resolve(false);
+        img.src = url;
+    });
+}
+
+async function resolveAdminReferenceImageUrl(questionId) {
+    const numericId = Number(questionId);
+    const extensions = ['png', 'jpg', 'jpeg', 'webp'];
+    const candidates = [];
+
+    if (numericId === 98) {
+        candidates.push('Images/98 Reesponse D');
+    }
+    candidates.push(`Images/Question #${numericId}`);
+    candidates.push(`Images/Question ${numericId}`);
+    candidates.push(`Images/Question${numericId}`);
+    candidates.push(`Images/Question-${numericId}`);
+    candidates.push(`Images/Question_${numericId}`);
+    candidates.push(`Images/${numericId}`);
+
+    for (const base of candidates) {
+        for (const ext of extensions) {
+            const url = `${base}.${ext}`;
+            const encodedUrl = encodeImagePath(url);
+            if (await adminImageUrlExists(encodedUrl)) {
+                return encodedUrl;
+            }
+        }
+    }
+
+    return null;
+}
+
+document.getElementById('parse-pdf-btn').addEventListener('click', async () => {
+    const input = document.getElementById('admin-pdf-input');
+    const status = document.getElementById('parse-status');
+    if (!input.files || !input.files[0]) { status.textContent = 'Please select a PDF file first.'; return; }
+    const file = input.files[0];
+    status.textContent = 'Parsing PDF...';
+    try {
+        const buf = await file.arrayBuffer();
+        const questions = await parsePdfContent(buf, (page, total, text) => {
+            status.textContent = `Parsing page ${page}/${total}...`;
+        });
+        if (!questions || questions.length === 0) { status.textContent = 'No questions parsed.'; return; }
+        localStorage.setItem('gcp_questions_db', JSON.stringify(questions));
+        localStorage.setItem('gcp_db_source', file.name);
+        status.textContent = `Parsed ${questions.length} questions and saved to localStorage.`;
+        loadCached();
+    } catch (e) {
+        console.error(e);
+        status.textContent = 'Error parsing PDF.';
+    }
+});
+
+document.getElementById('clear-cache-btn').addEventListener('click', () => {
+    localStorage.removeItem('gcp_questions_db');
+    localStorage.removeItem('gcp_db_source');
+    loadCached();
+    document.getElementById('runner-status').textContent = 'Cache cleared.';
+});
+
+function renderQuestionToRunner(q) {
+    const imageBtn = document.getElementById('admin-image-reference-btn');
+    if (imageBtn) {
+        imageBtn.style.display = 'none';
+        imageBtn.disabled = true;
+        imageBtn.onclick = null;
+    }
+
+    document.getElementById('question-area').style.display = 'block';
+    document.getElementById('q-title').textContent = `Q#${q.id}`;
+    document.getElementById('q-body').innerHTML = q.question;
+    // Show multi-select hint when question asks to choose multiple
+    const hintEl = document.getElementById('multi-hint');
+    hintEl.style.display = 'none';
+  try {
+    const txt = (q.question || '').toLowerCase();
+    const chooseMatch = txt.match(/choose\s+(one|two|three|four|five|\d+)/);
+    let required = null;
+    if (chooseMatch) {
+      const map = { one:1, two:2, three:3, four:4, five:5 };
+      const val = chooseMatch[1];
+      required = map[val] || parseInt(val) || null;
+    } else if (/select all that apply/.test(txt) || /choose all that apply/.test(txt)) {
+      required = Object.keys(q.options).length;
+    }
+    if (required && required > 1) {
+      hintEl.textContent = `Select ${required} option${required>1? 's':''}`;
+      hintEl.style.display = 'block';
+    }
+  } catch (e) { /* ignore */ }
+    const list = document.getElementById('option-list');
+    list.innerHTML = '';
+    Object.keys(q.options).sort().forEach(letter => {
+        const btn = document.createElement('button');
+        btn.className = 'answer-card';
+        btn.style.width = '100%';
+        btn.dataset.option = letter;
+        btn.innerHTML = `<strong>${letter}.</strong> ${q.options[letter]}`;
+        btn.addEventListener('click', () => {
+            // toggle selection
+            if (btn.classList.contains('multi-selected')) btn.classList.remove('multi-selected'); else btn.classList.add('multi-selected');
+        });
+        list.appendChild(btn);
+    });
+
+    const adminImageBtn = document.getElementById('admin-image-reference-btn');
+    if (adminImageBtn) {
+        resolveAdminReferenceImageUrl(q.id).then(url => {
+            if (!url) return;
+            adminImageBtn.style.display = 'inline-flex';
+            adminImageBtn.disabled = false;
+            adminImageBtn.onclick = () => {
+                const overlay = document.getElementById('admin-image-popup-overlay');
+                const preview = document.getElementById('admin-question-image-preview');
+                const title = document.getElementById('admin-image-popup-question-id');
+                if (!overlay || !preview || !title) return;
+                preview.src = url;
+                preview.alt = `Reference image for question ${q.id}`;
+                title.textContent = `Q#${q.id}`;
+                overlay.style.display = 'flex';
+                requestAnimationFrame(() => overlay.classList.add('active'));
+            };
+        });
+    }
+
+    document.getElementById('check-result').textContent = '';
+}
+
+document.getElementById('run-q-btn').addEventListener('click', () => {
+    const all = loadCached();
+    if (!all) { document.getElementById('runner-status').textContent = 'No cached DB. Upload and parse a PDF first.'; return; }
+    const idx = parseInt(document.getElementById('q-number').value, 10);
+    if (!idx || idx < 1 || idx > all.length) { document.getElementById('runner-status').textContent = 'Invalid question number.'; return; }
+    const q = all.find(x => x.id === idx) || all[idx-1];
+    if (!q) { document.getElementById('runner-status').textContent = 'Question not found.'; return; }
+    document.getElementById('runner-status').textContent = `Loaded question ${q.id}`;
+    renderQuestionToRunner(q);
+});
+
+document.getElementById('check-answer-btn').addEventListener('click', () => {
+    const list = Array.from(document.querySelectorAll('#option-list .answer-card'));
+    const selected = list.filter(b => b.classList.contains('multi-selected')).map(b => b.dataset.option).sort();
+    const resultEl = document.getElementById('check-result');
+    resultEl.textContent = '';
+
+    list.forEach(btn => {
+      btn.classList.remove('correct', 'incorrect');
+    });
+
+    if (!selected.length) {
+      resultEl.textContent = 'No option selected.';
+      return;
+    }
+    const qid = parseInt(document.getElementById('q-number').value,10);
+    const all = loadCached();
+    const q = all.find(x => x.id === qid) || all[qid-1];
+    const correctLetters = String(q.answer || '').toUpperCase().match(/[A-Z]/g) || [];
+
+    list.forEach(btn => {
+      const letter = btn.dataset.option;
+      const selectedThis = btn.classList.contains('multi-selected');
+      const isCorrectLetter = correctLetters.includes(letter);
+      if (selectedThis && isCorrectLetter) {
+        btn.classList.add('correct');
+      } else if (selectedThis && !isCorrectLetter) {
+        btn.classList.add('incorrect');
+      } else if (!selectedThis && isCorrectLetter) {
+        btn.classList.add('correct');
+      }
+    });
+
+    const isCorrect = selected.length === correctLetters.length && correctLetters.every(c => selected.includes(c));
+    resultEl.textContent = isCorrect ? `Correct! Answer: ${q.answer}` : `Incorrect. Correct: ${q.answer}`;
+});
+
+document.getElementById('reset-selection-btn').addEventListener('click', () => {
+    document.querySelectorAll('#option-list .answer-card').forEach(b => b.classList.remove('multi-selected', 'correct', 'incorrect'));
+    document.getElementById('check-result').textContent = '';
+});
+
+const adminImagePopupOverlay = document.getElementById('admin-image-popup-overlay');
+if (adminImagePopupOverlay) {
+    adminImagePopupOverlay.addEventListener('click', (event) => {
+        if (event.target === adminImagePopupOverlay) {
+            adminImagePopupOverlay.classList.remove('active');
+            setTimeout(() => {
+                adminImagePopupOverlay.style.display = 'none';
+                const preview = document.getElementById('admin-question-image-preview');
+                if (preview) preview.src = '';
+            }, 220);
+        }
+    });
+}
+
+const adminCloseImageBtn = document.getElementById('admin-close-image-popup');
+if (adminCloseImageBtn) {
+    adminCloseImageBtn.addEventListener('click', () => {
+        if (!adminImagePopupOverlay) return;
+        adminImagePopupOverlay.classList.remove('active');
+        setTimeout(() => {
+            adminImagePopupOverlay.style.display = 'none';
+            const preview = document.getElementById('admin-question-image-preview');
+            if (preview) preview.src = '';
+        }, 220);
+    });
+}
+
+// init
+(function(){
+  const adminPanel = document.getElementById('admin-panel');
+  adminPanel.style.display = 'block';
+  loadCached();
+
+  const changePwBtn = document.getElementById('change-pw-btn');
+  if (changePwBtn) {
+    changePwBtn.addEventListener('click', () => {
+      const newPw = prompt('Enter new admin password (leave blank to cancel):');
+      if (!newPw) return;
+      const confirmPw = prompt('Confirm new admin password:');
+      if (newPw !== confirmPw) { alert('Passwords do not match.'); return; }
+      localStorage.setItem('admin_password', newPw);
+      alert('Admin password updated.');
+    });
+  }
+})();
+</script>
+</body>
+</html>

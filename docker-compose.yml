@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  kahoot-quiz:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gcp-ace-quiz-quest
+    ports:
+      - "8080:80"        # Access at http://localhost:8080
+    restart: unless-stopped
