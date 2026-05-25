@@ -1,0 +1,48 @@
+steps:
+  # Step 1: Build the Docker image using the Dockerfile
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/$_SERVICE_NAME:latest'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/$_SERVICE_NAME:$SHORT_SHA'
+      - '-f'
+      - Dockerfile
+      - .
+
+  # Step 2: Push the image to Google Container Registry
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - 'gcr.io/$PROJECT_ID/$_SERVICE_NAME:latest'
+
+  # Step 3: Deploy to Cloud Run
+  - name: gcr.io/cloud-builders/run
+    args:
+      - deploy
+      - $_SERVICE_NAME
+      - '--image=gcr.io/$PROJECT_ID/$_SERVICE_NAME:latest'
+      - '--region=$_DEPLOY_REGION'
+      - '--port=80'
+      - '--allow-unauthenticated'
+      - '--memory=256Mi'
+      - '--cpu=1'
+
+# Build configuration
+images:
+  - 'gcr.io/$PROJECT_ID/$_SERVICE_NAME:latest'
+  - 'gcr.io/$PROJECT_ID/$_SERVICE_NAME:$SHORT_SHA'
+
+# Substitutions for variables (can be overridden)
+substitutions:
+  _SERVICE_NAME: gcp-ace-quiz-quest
+  _DEPLOY_REGION: us-central1
+
+# Build options
+options:
+  machineType: N1_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+# Timeout for the entire build
+timeout: 1800s
