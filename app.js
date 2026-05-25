@@ -406,7 +406,9 @@ class QuizGame {
     constructor(questions, mode, count, timeLimit) {
         this.allQuestions = [...questions];
         this.mode = mode; // 'classic' | 'endless' | 'exam'
-        this.timeLimit = parseInt(timeLimit); // in seconds, 0 = no limit
+        // Normalize timeLimit to a safe number (0 = no timer)
+        this.timeLimit = Number(timeLimit);
+        if (isNaN(this.timeLimit) || this.timeLimit < 0) this.timeLimit = 0;
         this.maxQuestions = count === 'all' ? this.allQuestions.length : parseInt(count);
         
         // Prepare questions pool
@@ -919,17 +921,40 @@ const UI = {
         
         // Audio cues & highlighting
         if (currentGame.mode === 'exam') {
-            // Mock Exam mode: silently transition without showing scoreboard
+            // Mock Exam mode: reveal correct/incorrect similar to other modes,
+            // but do not show the full leaderboard screen — allow user to proceed.
+            if (result.isCorrect) {
+                sounds.playCorrect();
+                document.getElementById('feedback-overlay').className = 'feedback-overlay active correct';
+                document.getElementById('feedback-icon').className = 'fa-solid fa-circle-check';
+                document.getElementById('feedback-message').textContent = 'Correct!';
+                document.getElementById('feedback-points').textContent = `+${result.userPoints.toLocaleString()} pts`;
+                document.getElementById('feedback-points').style.display = 'block';
+            } else {
+                sounds.playIncorrect();
+                document.getElementById('feedback-overlay').className = 'feedback-overlay active incorrect';
+                document.getElementById('feedback-icon').className = 'fa-solid fa-circle-xmark';
+                document.getElementById('feedback-message').textContent = 'Incorrect!';
+                document.getElementById('feedback-points').style.display = 'none';
+            }
+
+            // Highlight options: correct in green, user's wrong selections in red
             buttons.forEach(btn => {
-                if (String(selectedOption).toUpperCase().includes(btn.dataset.option)) {
-                    btn.classList.add('wrong-answer-highlight'); // briefly flash selected option(s)
+                const opt = btn.dataset.option;
+                if (result.correctAnswer.includes(opt)) {
+                    btn.classList.add('correct-answer-highlight');
+                } else if (String(selectedOption).toUpperCase().includes(opt)) {
+                    btn.classList.add('wrong-answer-highlight');
+                } else {
+                    btn.classList.add('fade-out');
                 }
             });
-            sounds.playTone(400, 'sine', 0.15, 0.05); // quiet confirmation tone
-            
-            setTimeout(() => {
-                this.advanceGame();
-            }, 1200);
+
+            document.getElementById('correct-answer-letter').textContent = result.correctAnswer;
+
+            // Enable Next button so the user can continue at their own pace
+            const nextBtnExam = document.getElementById('next-question-btn');
+            if (nextBtnExam) nextBtnExam.disabled = false;
         } else {
             // Standard/Endless modes: reveal correctness instantly
             if (result.isCorrect) {
