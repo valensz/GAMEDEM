@@ -1165,6 +1165,63 @@ pre.code-block {
     font-size: 24px;
     margin-bottom: 25px;
 }
+.history-card {
+    text-align: left;
+    max-width: 920px;
+    margin: 0 auto;
+}
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.history-subtitle {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-top: 6px;
+}
+.history-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.history-summary {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+.history-list {
+    display: grid;
+    gap: 14px;
+}
+.history-entry {
+    background: rgba(0, 0, 0, 0.14);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 18px;
+}
+.history-entry-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.history-entry-score {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent-light);
+}
+.history-entry-meta,
+.history-entry-topics {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
 .results-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

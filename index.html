@@ -113,6 +113,9 @@
                             <button id="start-game-btn" class="btn btn-primary btn-large">
                                 <i class="fa-solid fa-play"></i> Start Quest
                             </button>
+                            <button id="open-history-btn" class="btn btn-secondary btn-large">
+                                <i class="fa-solid fa-clock-rotate-left"></i> View History
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -137,7 +140,41 @@
                 </div>
             </section>
 
-            <!-- 2. Parsing Screen -->
+            <!-- 2. History Screen -->
+            <section id="history-screen" class="screen">
+                <div class="glass-card history-card">
+                    <div class="history-header">
+                        <div>
+                            <h2>Performance History</h2>
+                            <p class="history-subtitle">Review past quizzes, trends, and export your progress report.</p>
+                        </div>
+                        <div class="history-actions">
+                            <button id="export-history-pdf-btn" class="btn btn-primary">
+                                <i class="fa-solid fa-file-pdf"></i> Export PDF
+                            </button>
+                            <button id="clear-history-btn" class="btn btn-secondary">
+                                <i class="fa-solid fa-trash"></i> Clear History
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="history-summary">
+                        <span id="history-summary-text">No history recorded yet.</span>
+                    </div>
+
+                    <div class="history-list" id="history-list">
+                        <!-- History entries populate here -->
+                    </div>
+
+                    <div class="game-over-actions">
+                        <button id="close-history-btn" class="btn btn-secondary">
+                            <i class="fa-solid fa-arrow-left"></i> Back to Lobby
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. Parsing Screen -->
             <section id="parse-screen" class="screen">
                 <div class="glass-card parse-card">
                     <div class="spinner-container">
@@ -324,6 +361,8 @@
             </section>
         </main>
     </div>
+    <!-- PDF export library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <!-- Custom Game Logic & Parser Script -->
     <script src="app.js"></script>
 </body>

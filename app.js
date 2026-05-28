@@ -570,6 +570,7 @@ const UI = {
     screens: {
         lobby: document.getElementById('lobby-screen'),
         parse: document.getElementById('parse-screen'),
+        history: document.getElementById('history-screen'),
         game: document.getElementById('game-screen'),
         leaderboard: document.getElementById('leaderboard-screen'),
         gameOver: document.getElementById('game-over-screen')
@@ -623,6 +624,100 @@ const UI = {
         }
     },
     
+    getHistory() {
+        try {
+            return JSON.parse(localStorage.getItem('gcp_quiz_history')) || [];
+        } catch (e) {
+            return [];
+        }
+    },
+
+    saveHistoryEntry(entry) {
+        const history = this.getHistory();
+        history.unshift(entry);
+        if (history.length > 50) history.splice(50);
+        localStorage.setItem('gcp_quiz_history', JSON.stringify(history));
+    },
+
+    clearHistory() {
+        localStorage.removeItem('gcp_quiz_history');
+        this.renderHistory();
+    },
+
+    renderHistory() {
+        const history = this.getHistory();
+        const list = document.getElementById('history-list');
+        const summary = document.getElementById('history-summary-text');
+        if (!list || !summary) return;
+
+        if (!history.length) {
+            summary.textContent = 'No history recorded yet. Complete a quiz to start tracking your progress.';
+            list.innerHTML = '';
+            return;
+        }
+
+        summary.textContent = `Showing ${history.length} most recent sessions.`;
+        list.innerHTML = history.map(entry => {
+            const topics = Object.entries(entry.topicBreakdown || {})
+                .map(([topic, count]) => `${topic}: ${count}`)
+                .join(', ') || 'No topic issues';
+            return `
+                <div class="history-entry">
+                    <div class="history-entry-top">
+                        <div><strong>${entry.date}</strong> · ${entry.mode.toUpperCase()}</div>
+                        <div class="history-entry-score">${entry.accuracy}%</div>
+                    </div>
+                    <div class="history-entry-meta">
+                        Answered: ${entry.totalAnswered} · Correct: ${entry.correctCount} · Mistakes: ${entry.mistakesCount}
+                    </div>
+                    <div class="history-entry-topics">${topics}</div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    exportHistoryPdf() {
+        const history = this.getHistory();
+        if (!history.length) {
+            alert('No history to export yet. Complete a quiz first.');
+            return;
+        }
+
+        const { jsPDF } = window.jspdf || {};
+        if (!jsPDF) {
+            alert('PDF export library is not loaded.');
+            return;
+        }
+
+        const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+        const margin = 40;
+        let y = 40;
+        doc.setFontSize(16);
+        doc.text('GCP Quest Progress History', margin, y);
+        y += 28;
+        doc.setFontSize(11);
+
+        history.forEach((entry, index) => {
+            if (y > 740) {
+                doc.addPage();
+                y = 40;
+            }
+            doc.setFont(undefined, 'bold');
+            doc.text(`${entry.date} — ${entry.mode.toUpperCase()} — ${entry.accuracy}%`, margin, y);
+            y += 16;
+            doc.setFont(undefined, 'normal');
+            doc.text(`Answered: ${entry.totalAnswered}, Correct: ${entry.correctCount}, Mistakes: ${entry.mistakesCount}`, margin, y);
+            y += 14;
+            const topics = Object.entries(entry.topicBreakdown || {})
+                .map(([topic, count]) => `${topic}: ${count}`)
+                .join(', ');
+            doc.text(`Improvement topics: ${topics || 'None'}`, margin, y);
+            y += 20;
+        });
+
+        doc.save('GCP_Quest_History.pdf');
+    },
+
     // Save current game accuracy stats to the database
     saveStats(correctCount, totalCount) {
         const stats = JSON.parse(localStorage.getItem('gcp_quiz_stats')) || { bestAccuracy: 0, totalGames: 0, totalQuestions: 0, correctQuestions: 0 };
@@ -644,6 +739,21 @@ const UI = {
 
         localStorage.setItem('gcp_quiz_stats', JSON.stringify(stats));
         this.updateHeaderStats();
+    },
+
+    saveHistoryEntryFromGame(currentGame, totalAnswered, accPct, mistakes, topicBreakdown) {
+        const entry = {
+            id: Date.now(),
+            date: new Date().toLocaleString(),
+            mode: currentGame.mode,
+            totalAnswered,
+            correctCount: currentGame.accuracyCount,
+            accuracy: accPct,
+            mistakesCount: mistakes.length,
+            topicBreakdown,
+            mistakes: mistakes.map(m => ({ qIndex: m.qIndex, category: m.category, selectedText: m.selectedText, correctText: m.correctText }))
+        };
+        this.saveHistoryEntry(entry);
     },
 
     // Initialize or auto-load the default bundled PDF
@@ -1221,6 +1331,8 @@ const UI = {
             }
         }
 
+        this.saveHistoryEntryFromGame(currentGame, totalAnswered, accPct, mistakes, topicBreakdown);
+
         if (mistakes.length > 0) {
             reviewContainer.style.display = 'block';
             reviewList.innerHTML = '';
@@ -1359,6 +1471,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         UI.showScreen('game');
         UI.renderQuestion();
+    });
+
+    document.getElementById('open-history-btn').addEventListener('click', () => {
+        UI.renderHistory();
+        UI.showScreen('history');
+    });
+
+    document.getElementById('export-history-pdf-btn').addEventListener('click', () => {
+        UI.exportHistoryPdf();
+    });
+
+    document.getElementById('clear-history-btn').addEventListener('click', () => {
+        if (confirm('Clear all saved history? This cannot be undone.')) {
+            UI.clearHistory();
+        }
+    });
+
+    document.getElementById('close-history-btn').addEventListener('click', () => {
+        UI.showScreen('lobby');
+        UI.updateHeaderStats();
     });
     
     // 6. Next Question click overlay actions
