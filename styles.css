@@ -146,6 +146,13 @@ body {
     display: flex;
     gap: 15px;
 }
+.header-actions {
+    display: flex;
+    gap: 12px;
+}
+.header-actions .btn {
+    white-space: nowrap;
+}
 .stat-badge {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid var(--border-color);

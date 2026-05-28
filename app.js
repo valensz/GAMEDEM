@@ -599,17 +599,12 @@ const UI = {
     
     // Updates global statistics shown in header
     updateHeaderStats() {
-        const stats = JSON.parse(localStorage.getItem('gcp_quiz_stats')) || { bestAccuracy: 0, totalQuestions: 0, correctQuestions: 0, totalGames: 0 };
-        const scoreDisplay = document.getElementById('high-score-display');
+        const stats = JSON.parse(localStorage.getItem('gcp_quiz_stats')) || { totalQuestions: 0, correctQuestions: 0, totalGames: 0 };
         const accuracyDisplay = document.getElementById('accuracy-display');
         const headerStats = document.getElementById('header-stats');
-        let bestAccuracy = Number(stats.bestAccuracy ?? stats.highScore ?? 0) || 0;
-        // Defensive clamp
-        bestAccuracy = Math.max(0, Math.min(100, Math.round(bestAccuracy)));
         
         if ((stats.totalQuestions || 0) > 0) {
             headerStats.style.display = 'flex';
-            scoreDisplay.textContent = `Best Accuracy: ${bestAccuracy}%`;
             const acc = Math.round((stats.correctQuestions / stats.totalQuestions) * 100);
             accuracyDisplay.textContent = `Accuracy: ${acc}%`;
             
@@ -1472,6 +1467,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         UI.showScreen('game');
         UI.renderQuestion();
     });
+
+    const testQuestionsBtn = document.getElementById('go-to-question-runner-btn');
+    if (testQuestionsBtn) {
+        testQuestionsBtn.addEventListener('click', () => {
+            window.location.href = 'question-runner.html';
+        });
+    }
 
     document.getElementById('open-history-btn').addEventListener('click', () => {
         UI.renderHistory();

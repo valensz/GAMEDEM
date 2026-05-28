@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Question Runner</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dark-theme">
+  <div class="app-container">
+    <header class="app-header">
+      <div class="logo">
+        <i class="fa-solid fa-vial logo-icon"></i>
+        <span class="logo-text">Question Runner</span>
+      </div>
+      <div class="header-actions">
+        <a href="index.html" class="btn btn-secondary">
+          <i class="fa-solid fa-arrow-left"></i> Back to Quiz
+        </a>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <section class="screen active">
+        <div class="glass-card history-card" style="max-width: 900px; margin: 0 auto;">
+          <h2>Admin Test Mode</h2>
+          <p class="history-subtitle">Load a specific question from the cached database and answer it individually.</p>
+
+          <div class="controls" style="margin-top: 20px; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <label>Question # <input type="number" id="q-number" min="1" value="1"></label>
+            <button id="run-q-btn" class="btn btn-primary">Load Question</button>
+            <button id="clear-runner-btn" class="btn">Reset</button>
+            <span id="runner-status" class="status">Loaded questions: <strong id="runner-count">0</strong> (source: <strong id="runner-source">—</strong>)</span>
+          </div>
+
+          <div class="question-area" id="question-area" style="display:none; margin-top: 24px;">
+            <h4 id="q-title"></h4>
+            <div id="multi-hint" class="status" style="margin-bottom: 10px; display:none;"></div>
+            <div id="q-body" style="white-space: pre-wrap; line-height: 1.6;"></div>
+            <button id="show-image-btn" class="btn btn-secondary" style="display:none; margin-top: 12px;">
+              <i class="fa-solid fa-image"></i> Show Reference Image
+            </button>
+            <div class="option-list" id="option-list"></div>
+            <!-- Removed Check/Reset buttons: validation happens on selection like main app -->
+            <div id="check-result" class="status" style="margin-top:12px;"></div>
+          </div>
+
+          <div id="image-popup-overlay" class="image-popup-overlay" style="display:none;">
+            <div class="image-popup-card">
+              <button id="close-image-popup" class="btn btn-link close-image-btn">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+              <div class="popup-title">Reference Image for <span id="image-popup-question-id"></span></div>
+              <img id="question-image-preview" src="about:blank" alt="Question reference image" />
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    function loadCachedQuestions() {
+      const cached = localStorage.getItem('gcp_questions_db');
+      const countEl = document.getElementById('runner-count');
+      const sourceEl = document.getElementById('runner-source');
+      if (!cached) {
+        if (countEl) countEl.textContent = '0';
+        if (sourceEl) sourceEl.textContent = '—';
+        return null;
+      }
+      try {
+        const questions = JSON.parse(cached);
+        if (countEl) countEl.textContent = String(questions.length);
+        if (sourceEl) sourceEl.textContent = localStorage.getItem('gcp_db_source') || 'kahoot.pdf';
+        return questions;
+      } catch (e) {
+        if (countEl) countEl.textContent = '0';
+        if (sourceEl) sourceEl.textContent = '—';
+        return null;
+      }
+    }
+
+    function encodeImagePath(url) {
+      return url.split('/').map(part => encodeURIComponent(part)).join('/');
+    }
+
+    async function imageUrlExists(url) {
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve(true);
+        img.onerror = () => resolve(false);
+        img.src = url;
+      });
+    }
+
+    async function resolveReferenceImageUrl(questionId) {
+      const numericId = Number(questionId);
+      const extensions = ['png', 'jpg', 'jpeg', 'webp'];
+      const candidates = [];
+      candidates.push(`Images/Question #${numericId}`);
+      candidates.push(`Images/Question ${numericId}`);
+      candidates.push(`Images/Question${numericId}`);
+      candidates.push(`Images/Question-${numericId}`);
+      candidates.push(`Images/Question_${numericId}`);
+      candidates.push(`Images/${numericId}`);
+
+      for (const base of candidates) {
+        for (const ext of extensions) {
+          const url = `${base}.${ext}`;
+          const encodedUrl = encodeImagePath(url);
+          if (await imageUrlExists(encodedUrl)) {
+            return encodedUrl;
+          }
+        }
+      }
+      return null;
+    }
+
+    function renderQuestion(q) {
+      const imageBtn = document.getElementById('show-image-btn');
+      if (imageBtn) {
+        imageBtn.style.display = 'none';
+        imageBtn.disabled = true;
+        imageBtn.onclick = null;
+      }
+
+      document.getElementById('question-area').style.display = 'block';
+      document.getElementById('q-title').textContent = `Q#${q.id}`;
+      document.getElementById('q-body').textContent = q.question || '';
+      const checkBtn = document.getElementById('check-answer-btn');
+      if (checkBtn) checkBtn.disabled = true; // start disabled; enabled for multi when selection count matches
+      const hintEl = document.getElementById('multi-hint');
+      hintEl.style.display = 'none';
+
+      try {
+        const txt = (q.question || '').toLowerCase();
+        const chooseMatch = txt.match(/choose\s+(one|two|three|four|five|\d+)/);
+        let required = null;
+        if (chooseMatch) {
+          const map = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+          const val = chooseMatch[1];
+          required = map[val] || parseInt(val) || null;
+        } else if (/select all that apply/.test(txt) || /choose all that apply/.test(txt)) {
+          required = Object.keys(q.options).length;
+        }
+        if (required && required > 1) {
+          hintEl.textContent = `Select ${required} option${required > 1 ? 's' : ''}`;
+          hintEl.style.display = 'block';
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      const list = document.getElementById('option-list');
+      // Clear any existing options to avoid duplicates when loading repeatedly
+      list.innerHTML = '';
+      // Determine multiple-response style using same logic as main app
+      q.isMultiple = false;
+      q.requiredSelections = 1;
+      try {
+        const txt = (q.question || '').toLowerCase();
+        const chooseMatch = txt.match(/\b(?:choose|select)\s+(one|two|three|four|five|both|\d+)\b/);
+        const allApplyMatch = /select all that apply/.test(txt) || /choose all that apply/.test(txt);
+
+        if (chooseMatch) {
+          const map = { one: 1, two: 2, three: 3, four: 4, five: 5, both: 2 };
+          const val = chooseMatch[1];
+          q.requiredSelections = map[val] || parseInt(val) || 1;
+          q.isMultiple = q.requiredSelections > 1;
+        } else if (allApplyMatch) {
+          q.isMultiple = true;
+          q.requiredSelections = Object.keys(q.options).length;
+        }
+      } catch (e) { /* ignore */ }
+
+      const letters = Object.keys(q.options).sort();
+      q.requiredSelections = Math.max(1, Math.min(q.requiredSelections, letters.length));
+
+      // Build option buttons and wire interactions. Single-select validates immediately like main app.
+      const multiSet = new Set();
+      letters.forEach(letter => {
+        const btn = document.createElement('button');
+        btn.className = 'answer-card';
+        btn.style.width = '100%';
+        btn.dataset.option = letter;
+        btn.innerHTML = `<strong>${letter}.</strong> ${q.options[letter]}`;
+
+        if (q.isMultiple) {
+          btn.addEventListener('click', () => {
+            if (multiSet.has(letter)) {
+              multiSet.delete(letter);
+              btn.classList.remove('multi-selected');
+            } else {
+              if (multiSet.size >= q.requiredSelections) return;
+              multiSet.add(letter);
+              btn.classList.add('multi-selected');
+            }
+            // enable check button if selected count equals required (guarded)
+            const cb = document.getElementById('check-answer-btn');
+            if (cb) cb.disabled = (multiSet.size !== q.requiredSelections);
+          });
+        } else {
+          // single-select: immediate validation to mimic main app behavior
+          btn.addEventListener('click', () => {
+            validateAnswer(q, [letter]);
+          });
+        }
+
+        list.appendChild(btn);
+      });
+
+      if (imageBtn) {
+        resolveReferenceImageUrl(q.id).then(url => {
+          if (!url) return;
+          imageBtn.style.display = 'inline-flex';
+          imageBtn.disabled = false;
+          imageBtn.onclick = () => {
+            const overlay = document.getElementById('image-popup-overlay');
+            const preview = document.getElementById('question-image-preview');
+            const title = document.getElementById('image-popup-question-id');
+            if (!overlay || !preview || !title) return;
+            preview.src = url;
+            preview.alt = `Reference image for question ${q.id}`;
+            title.textContent = `Q#${q.id}`;
+            overlay.style.display = 'flex';
+            requestAnimationFrame(() => overlay.classList.add('active'));
+          };
+        });
+      }
+
+      document.getElementById('check-result').textContent = '';
+    }
+
+    // Validate answer (used by single-click and check button for multi)
+    function validateAnswer(q, selectedLetters) {
+      const list = Array.from(document.querySelectorAll('#option-list .answer-card'));
+      const selected = (Array.isArray(selectedLetters) ? selectedLetters : String(selectedLetters || '').toUpperCase().match(/[A-Z]/g) || []).map(s => String(s).toUpperCase());
+      const resultEl = document.getElementById('check-result');
+      resultEl.textContent = '';
+
+      // clear classes
+      list.forEach(btn => btn.classList.remove('correct', 'incorrect', 'multi-selected', 'correct-answer-highlight', 'wrong-answer-highlight', 'fade-out'));
+
+      const correctLetters = String(q.answer || '').toUpperCase().match(/[A-Z]/g) || [];
+      const isCorrect = selected.length > 0 && selected.length === correctLetters.length && correctLetters.every(c => selected.includes(c));
+
+      // apply highlights similar to main UI
+      list.forEach(btn => {
+        const opt = btn.dataset.option;
+        if (correctLetters.includes(opt)) {
+          btn.classList.add('correct-answer-highlight');
+        } else if (selected.includes(opt)) {
+          btn.classList.add('wrong-answer-highlight');
+        } else {
+          btn.classList.add('fade-out');
+        }
+      });
+
+      resultEl.textContent = isCorrect ? `Correct! Answer: ${q.answer}` : `Incorrect. Correct: ${q.answer}`;
+      // disable further interaction
+      document.querySelectorAll('#option-list .answer-card').forEach(b => b.disabled = true);
+      const cb = document.getElementById('check-answer-btn'); if (cb) cb.disabled = true;
+    }
+
+    function clearSelection() {
+      document.querySelectorAll('#option-list .answer-card').forEach(btn => {
+        btn.classList.remove('multi-selected', 'correct', 'incorrect');
+      });
+      document.getElementById('check-result').textContent = '';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const questions = loadCachedQuestions();
+      const checkBtnInit = document.getElementById('check-answer-btn');
+      if (checkBtnInit) checkBtnInit.disabled = true;
+      const statusEl = document.getElementById('runner-status');
+      if (!questions) {
+        if (statusEl) statusEl.textContent = 'No cached database found. Upload a PDF in admin or on the main app first.';
+      }
+
+      document.getElementById('run-q-btn').addEventListener('click', () => {
+        const loaded = loadCachedQuestions();
+        if (!loaded) {
+          if (statusEl) statusEl.textContent = 'No cached DB available.';
+          return;
+        }
+        const idx = parseInt(document.getElementById('q-number').value, 10);
+        if (!idx || idx < 1 || idx > loaded.length) {
+          if (statusEl) statusEl.textContent = 'Invalid question number.';
+          return;
+        }
+        const q = loaded.find(x => x.id === idx) || loaded[idx - 1];
+        if (!q) {
+          if (statusEl) statusEl.textContent = 'Question not found.';
+          return;
+        }
+        if (statusEl) statusEl.textContent = `Loaded question ${q.id}`;
+        renderQuestion(q);
+      });
+
+      // Removed: 'Check Answer' and 'Reset Selection' buttons and listeners (single-click and multi-select validate immediately)
+
+      document.getElementById('clear-runner-btn').addEventListener('click', () => {
+        document.getElementById('question-area').style.display = 'none';
+        document.getElementById('runner-status').textContent = 'Ready. Load a question number from the cached DB.';
+        const list = document.getElementById('option-list'); if (list) list.innerHTML = '';
+        document.getElementById('check-result').textContent = '';
+      });
+
+      const overlay = document.getElementById('image-popup-overlay');
+      const closeBtn = document.getElementById('close-image-popup');
+      if (overlay) {
+        overlay.addEventListener('click', event => {
+          if (event.target === overlay) {
+            overlay.classList.remove('active');
+            setTimeout(() => {
+              overlay.style.display = 'none';
+              const preview = document.getElementById('question-image-preview');
+              if (preview) preview.src = '';
+            }, 220);
+          }
+        });
+      }
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+          if (!overlay) return;
+          overlay.classList.remove('active');
+          setTimeout(() => {
+            overlay.style.display = 'none';
+            const preview = document.getElementById('question-image-preview');
+            if (preview) preview.src = '';
+          }, 220);
+        });
+      }
+    });
+  </script>
+</body>
+</html>
