@@ -482,17 +482,7 @@ class QuizGame {
     simulateBots(currentQuestion) {
         this.bots.forEach(bot => {
             const isCorrect = Math.random() < bot.accuracy;
-            const timeTaken = bot.speedMin + Math.random() * (bot.speedMax - bot.speedMin);
-            
-            let points = 0;
-            if (isCorrect && (this.timeLimit === 0 || timeTaken < this.timeLimit)) {
-                // Kahoot Formula
-                const ratio = this.timeLimit > 0 ? (timeTaken / this.timeLimit) : 0.5;
-                points = Math.round(1000 * (1 - ratio / 2));
-            }
-            
-            bot.lastPoints = points;
-            bot.score += points;
+            bot.lastPoints = 0;
             bot.lastCorrect = isCorrect;
         });
     }
@@ -520,22 +510,30 @@ class QuizGame {
         
         if (isCorrect) {
             this.accuracyCount++;
-            const ratio = this.timeLimit > 0 ? (timeTaken / this.timeLimit) : 0.2; // default high points if no timer
-            userPoints = Math.round(1000 * (1 - ratio / 2));
-            this.score += userPoints;
         } else {
             if (this.mode === 'endless') {
                 this.lives--;
             }
         }
         
+        const selectedAnswerText = selectedLetters.length > 0
+            ? selectedLetters.map(letter => `${letter}: ${q.options[letter] || 'Unknown'}`).join(', ')
+            : 'None (Time Out)';
+        const correctAnswerText = correctLetters.length > 0
+            ? correctLetters.map(letter => `${letter}: ${q.options[letter] || 'Unknown'}`).join(', ')
+            : 'Unknown';
+        const questionCategory = getQuestionTopic(q.question);
+
         // Log answer (for mock exam and final details review)
         this.answersLog.push({
             qIndex: this.currentIndex + 1,
             questionText: q.question,
             selected: selectedOption,
+            selectedText: selectedAnswerText,
             correct: q.answer,
-            isCorrect: isCorrect
+            correctText: correctAnswerText,
+            isCorrect: isCorrect,
+            category: questionCategory
         });
         
         // Simulate bots
@@ -600,14 +598,17 @@ const UI = {
     
     // Updates global statistics shown in header
     updateHeaderStats() {
-        const stats = JSON.parse(localStorage.getItem('gcp_quiz_stats')) || { highScore: 0, totalQuestions: 0, correctQuestions: 0 };
+        const stats = JSON.parse(localStorage.getItem('gcp_quiz_stats')) || { bestAccuracy: 0, totalQuestions: 0, correctQuestions: 0, totalGames: 0 };
         const scoreDisplay = document.getElementById('high-score-display');
         const accuracyDisplay = document.getElementById('accuracy-display');
         const headerStats = document.getElementById('header-stats');
+        let bestAccuracy = Number(stats.bestAccuracy ?? stats.highScore ?? 0) || 0;
+        // Defensive clamp
+        bestAccuracy = Math.max(0, Math.min(100, Math.round(bestAccuracy)));
         
-        if (stats.totalQuestions > 0) {
+        if ((stats.totalQuestions || 0) > 0) {
             headerStats.style.display = 'flex';
-            scoreDisplay.textContent = `High Score: ${stats.highScore.toLocaleString()}`;
+            scoreDisplay.textContent = `Best Accuracy: ${bestAccuracy}%`;
             const acc = Math.round((stats.correctQuestions / stats.totalQuestions) * 100);
             accuracyDisplay.textContent = `Accuracy: ${acc}%`;
             
@@ -622,17 +623,25 @@ const UI = {
         }
     },
     
-    // Save current game score to statistics database
-    saveStats(score, correctCount, totalCount) {
-        const stats = JSON.parse(localStorage.getItem('gcp_quiz_stats')) || { highScore: 0, totalGames: 0, totalQuestions: 0, correctQuestions: 0 };
-        
+    // Save current game accuracy stats to the database
+    saveStats(correctCount, totalCount) {
+        const stats = JSON.parse(localStorage.getItem('gcp_quiz_stats')) || { bestAccuracy: 0, totalGames: 0, totalQuestions: 0, correctQuestions: 0 };
+
+        const cc = Number(correctCount) || 0;
+        const tc = Number(totalCount) || 0;
+
         stats.totalGames = (stats.totalGames || 0) + 1;
-        stats.totalQuestions += totalCount;
-        stats.correctQuestions += correctCount;
-        if (score > stats.highScore) {
-            stats.highScore = score;
+        stats.totalQuestions = (stats.totalQuestions || 0) + tc;
+        stats.correctQuestions = (stats.correctQuestions || 0) + cc;
+
+        const currentAccuracy = tc > 0 ? Math.round((cc / tc) * 100) : 0;
+        const safeCurrentAccuracy = Math.max(0, Math.min(100, currentAccuracy));
+
+        const prevBest = Number(stats.bestAccuracy) || 0;
+        if (safeCurrentAccuracy > prevBest) {
+            stats.bestAccuracy = safeCurrentAccuracy;
         }
-        
+
         localStorage.setItem('gcp_quiz_stats', JSON.stringify(stats));
         this.updateHeaderStats();
     },
@@ -737,9 +746,6 @@ const UI = {
         feedbackOverlay.className = 'feedback-overlay';
         document.getElementById('feedback-icon').className = 'fa-solid';
         document.getElementById('feedback-message').textContent = '';
-        const feedbackPoints = document.getElementById('feedback-points');
-        feedbackPoints.textContent = '';
-        feedbackPoints.style.display = 'none';
         document.getElementById('correct-answer-letter').textContent = '';
         const voteChartContainer = document.getElementById('hint-vote-chart-container');
         voteChartContainer.style.display = 'none';
@@ -752,7 +758,7 @@ const UI = {
             indexText.textContent = `${currentGame.currentIndex + 1}/${currentGame.questions.length}`;
         }
         
-        document.getElementById('game-score-val').textContent = currentGame.score.toLocaleString();
+        document.getElementById('game-score-val').textContent = currentGame.accuracyCount.toString();
         qIdBadge.textContent = `Q#${q.id}`;
         
         // Format question body text (handle paragraphs, code snippets)
@@ -928,14 +934,11 @@ const UI = {
                 document.getElementById('feedback-overlay').className = 'feedback-overlay active correct';
                 document.getElementById('feedback-icon').className = 'fa-solid fa-circle-check';
                 document.getElementById('feedback-message').textContent = 'Correct!';
-                document.getElementById('feedback-points').textContent = `+${result.userPoints.toLocaleString()} pts`;
-                document.getElementById('feedback-points').style.display = 'block';
             } else {
                 sounds.playIncorrect();
                 document.getElementById('feedback-overlay').className = 'feedback-overlay active incorrect';
                 document.getElementById('feedback-icon').className = 'fa-solid fa-circle-xmark';
                 document.getElementById('feedback-message').textContent = 'Incorrect!';
-                document.getElementById('feedback-points').style.display = 'none';
             }
 
             // Highlight options: correct in green, user's wrong selections in red
@@ -962,14 +965,11 @@ const UI = {
                 document.getElementById('feedback-overlay').className = 'feedback-overlay active correct';
                 document.getElementById('feedback-icon').className = 'fa-solid fa-circle-check';
                 document.getElementById('feedback-message').textContent = 'Correct!';
-                document.getElementById('feedback-points').textContent = `+${result.userPoints.toLocaleString()} pts`;
-                document.getElementById('feedback-points').style.display = 'block';
             } else {
                 sounds.playIncorrect();
                 document.getElementById('feedback-overlay').className = 'feedback-overlay active incorrect';
                 document.getElementById('feedback-icon').className = 'fa-solid fa-circle-xmark';
                 document.getElementById('feedback-message').textContent = 'Incorrect!';
-                document.getElementById('feedback-points').style.display = 'none';
             }
             
             // Highlight options
@@ -1009,7 +1009,6 @@ const UI = {
             document.getElementById('feedback-overlay').className = 'feedback-overlay active time-up';
             document.getElementById('feedback-icon').className = 'fa-solid fa-hourglass-end';
             document.getElementById('feedback-message').textContent = "Time's Up!";
-            document.getElementById('feedback-points').style.display = 'none';
             document.getElementById('correct-answer-letter').textContent = result.correctAnswer;
             
             buttons.forEach(btn => {
@@ -1185,112 +1184,66 @@ const UI = {
         this.showScreen('gameOver');
         
         // Save statistics
-        this.saveStats(currentGame.score, currentGame.accuracyCount, currentGame.questions.length);
+        this.saveStats(currentGame.accuracyCount, currentGame.currentIndex);
         
-        // Setup final score card values
-        const accPct = Math.round((currentGame.accuracyCount / currentGame.questions.length) * 100);
-        document.getElementById('result-score').textContent = currentGame.score.toLocaleString();
+        // Setup final result values
+        const totalAnswered = currentGame.currentIndex;
+        const accPct = totalAnswered > 0 ? Math.round((currentGame.accuracyCount / totalAnswered) * 100) : 0;
+        document.getElementById('result-answered').textContent = totalAnswered.toString();
         document.getElementById('result-accuracy').textContent = `${accPct}%`;
-        
-        // Determine player final position
-        let userPos = 5;
-        if (currentGame.mode === 'exam') {
-            // Simulate bots overall mock score
-            currentGame.bots.forEach(bot => {
-                // Approximate overall performance
-                const simulatedCorrect = Math.round(bot.accuracy * currentGame.questions.length);
-                bot.score = simulatedCorrect * 750; // average score multiplier
-            });
-            const allStandings = [
-                { name: 'YOU', score: currentGame.accuracyCount },
-                ...currentGame.bots.map(b => ({ name: b.name, score: b.score / 750 }))
-            ];
-            allStandings.sort((a,b) => b.score - a.score);
-            userPos = allStandings.findIndex(p => p.name === 'YOU') + 1;
-        } else {
-            userPos = currentGame.leaderboard.findIndex(p => p.isUser) + 1;
-        }
-        
-        document.getElementById('result-rank').textContent = `#${userPos} / 5`;
-        
-        // Podium headlines
-        const headline = document.getElementById('podium-headline');
-        if (currentGame.mode === 'exam') {
-            const passed = accPct >= 70; // passing score for GCP exams is roughly 70%
-            headline.textContent = passed ? 'You Passed the Exam Simulator!' : 'Mock Exam Failed (Requires 70%)';
-            headline.className = passed ? 'passed-title' : 'failed-title';
-            headline.style.color = passed ? 'var(--success)' : 'var(--error)';
-        } else {
-            if (userPos === 1) {
-                headline.textContent = 'Victory! You placed 1st!';
-                headline.style.color = 'var(--warning)';
-            } else {
-                headline.textContent = `You finished in #${userPos} place!`;
-                headline.style.color = 'var(--text-main)';
-            }
-        }
-        
-        // Render Podium Pillar graphics
-        const podiumData = currentGame.mode === 'exam' ? 
-            [
-                { name: 'YOU', score: currentGame.accuracyCount },
-                ...currentGame.bots.map(b => ({ name: b.name, score: Math.round(b.accuracy * currentGame.questions.length) }))
-            ].sort((a,b) => b.score - a.score) : 
-            currentGame.leaderboard.slice(0, 3);
-            
-        // Map elements
-        const steps = {
-            1: { nameEl: 'podium-p1-name', scoreEl: 'podium-p1-score' },
-            2: { nameEl: 'podium-p2-name', scoreEl: 'podium-p2-score' },
-            3: { nameEl: 'podium-p3-name', scoreEl: 'podium-p3-score' }
-        };
-        
-        // Draw podium labels
-        podiumData.forEach((p, idx) => {
-            const stepNum = idx + 1;
-            if (steps[stepNum]) {
-                const isCorrectUnit = currentGame.mode === 'exam';
-                const scoreText = isCorrectUnit ? `${p.score}/${currentGame.questions.length} Correct` : `${p.score.toLocaleString()} pts`;
-                
-                document.getElementById(steps[stepNum].nameEl).textContent = p.name || p.name;
-                document.getElementById(steps[stepNum].scoreEl).textContent = scoreText;
-            }
-        });
         
         // Build mistakes review section if any incorrect answers exist
         const mistakes = currentGame.answersLog.filter(a => !a.isCorrect);
         const reviewContainer = document.getElementById('mistakes-review-container');
         const reviewList = document.getElementById('mistakes-review-list');
-        
+
+        // Compute topic breakdown to derive top improvement category
+        let topicBreakdown = {};
+        mistakes.forEach(m => {
+            topicBreakdown[m.category] = (topicBreakdown[m.category] || 0) + 1;
+        });
+
+        const topCategory = Object.keys(topicBreakdown).length ?
+            Object.entries(topicBreakdown).sort((a,b) => b[1] - a[1])[0][0] : '—';
+
+        // Build improvement summary lines (each category on its own line)
+        const improvementLines = Object.entries(topicBreakdown).length ?
+            Object.entries(topicBreakdown)
+                .sort((a,b) => b[1] - a[1])
+                .map(([topic, count]) => `${topic} — ${count} ${count === 1 ? 'mistake' : 'mistakes'}`) : [];
+
+        const resultCatEl = document.getElementById('result-category');
+        if (resultCatEl) {
+            if (improvementLines.length) {
+                resultCatEl.innerHTML = improvementLines.join('<br>');
+            } else {
+                resultCatEl.textContent = '—';
+            }
+        }
+
         if (mistakes.length > 0) {
             reviewContainer.style.display = 'block';
             reviewList.innerHTML = '';
-            
-            // Topic analysis helper for Mock Exam performance breakdown
-            let topicBreakdown = {};
-            
+
             mistakes.forEach(m => {
                 const item = document.createElement('div');
                 item.className = 'mistake-item';
-                
+
                 const title = document.createElement('div');
                 title.className = 'mistake-q-title';
                 title.innerHTML = `Q${m.qIndex}: ${m.questionText.substring(0, 140)}...`;
-                
+
                 const answerSummary = document.createElement('div');
                 answerSummary.className = 'mistake-q-ans';
-                answerSummary.innerHTML = `Your Answer: <span style="color: var(--error)">${m.selected || 'None (Time Out)'}</span> | Correct: <strong>${m.correct}</strong>`;
-                
+                answerSummary.innerHTML = `Your Answer: <span style="color: var(--error)">${m.selectedText}</span><br>Correct Answer: <strong>${m.correctText}</strong><br>Category: <strong>${m.category}</strong>`;
+
                 item.appendChild(title);
                 item.appendChild(answerSummary);
                 reviewList.appendChild(item);
-                
-                // Track topics
-                const topic = getQuestionTopic(m.questionText);
-                topicBreakdown[topic] = (topicBreakdown[topic] || 0) + 1;
             });
-            
-            // If Mock Exam, append Topic Analysis strengths & weaknesses review header
+
+            // No separate top-category block anymore; results grid shows the improvement summary text.
+
             if (currentGame.mode === 'exam') {
                 const analysisHeader = document.createElement('div');
                 analysisHeader.className = 'topic-analysis-banner';
@@ -1308,6 +1261,7 @@ const UI = {
             }
         } else {
             reviewContainer.style.display = 'none';
+            // ensure nothing attempts to reference the removed top-category element
         }
     }
 };

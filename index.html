@@ -30,7 +30,7 @@
             <div class="header-stats" id="header-stats" style="display: none;">
                 <div class="stat-badge">
                     <i class="fa-solid fa-trophy"></i>
-                    <span id="high-score-display">High Score: 0</span>
+                    <span id="high-score-display">Best Accuracy: 0%</span>
                 </div>
                 <div class="stat-badge">
                     <i class="fa-solid fa-circle-check"></i>
@@ -166,7 +166,7 @@
                         <span class="meta-value" id="game-q-index">1/10</span>
                     </div>
                     <div class="game-score">
-                        <span class="meta-label">SCORE</span>
+                        <span class="meta-label">CORRECT</span>
                         <span class="meta-value" id="game-score-val">0</span>
                     </div>
                     <div class="game-timer-container">
@@ -235,7 +235,6 @@
                                 <i class="fa-solid" id="feedback-icon"></i>
                                 <span id="feedback-message">Correct!</span>
                             </div>
-                            <div class="points-earned" id="feedback-points">+950 pts</div>
                         </div>
                         
                         <div class="feedback-details">
@@ -286,55 +285,20 @@
 
             <!-- 5. Game Over Screen -->
             <section id="game-over-screen" class="screen">
-                <!-- Podium Showcase -->
-                <div class="podium-showcase">
-                    <div class="podium-title">
-                        <i class="fa-solid fa-trophy winner-gold"></i>
-                        <h1 id="podium-headline">You placed 1st!</h1>
-                    </div>
-                    <div class="podium-container">
-                        <!-- 2nd place -->
-                        <div class="podium-step step-2">
-                            <div class="podium-player" id="podium-p2-name">CloudMaster</div>
-                            <div class="podium-pillar">
-                                <div class="pillar-label">2</div>
-                            </div>
-                            <div class="podium-score" id="podium-p2-score">18,450</div>
-                        </div>
-                        <!-- 1st place -->
-                        <div class="podium-step step-1">
-                            <div class="podium-player" id="podium-p1-name">YOU</div>
-                            <div class="podium-pillar">
-                                <div class="pillar-label"><i class="fa-solid fa-crown"></i></div>
-                            </div>
-                            <div class="podium-score" id="podium-p1-score">22,300</div>
-                        </div>
-                        <!-- 3rd place -->
-                        <div class="podium-step step-3">
-                            <div class="podium-player" id="podium-p3-name">KubernetesGuru</div>
-                            <div class="podium-pillar">
-                                <div class="pillar-label">3</div>
-                            </div>
-                            <div class="podium-score" id="podium-p3-score">15,120</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Stats summary -->
                 <div class="glass-card game-summary-card">
-                    <h2>Quest Results Summary</h2>
+                    <h2>Quiz Results</h2>
                     <div class="results-grid">
                         <div class="result-box">
-                            <span class="result-val" id="result-score">22,300</span>
-                            <span class="result-lbl">Final Score</span>
+                            <span class="result-val" id="result-answered">0</span>
+                            <span class="result-lbl">Questions Answered</span>
                         </div>
                         <div class="result-box">
-                            <span class="result-val" id="result-accuracy">90%</span>
+                            <span class="result-val" id="result-accuracy">0%</span>
                             <span class="result-lbl">Accuracy</span>
                         </div>
                         <div class="result-box">
-                            <span class="result-val" id="result-rank">#1 / 5</span>
-                            <span class="result-lbl">Final Position</span>
+                            <div class="result-val" id="result-category">—</div>
+                            <span class="result-lbl">Improvement Opportunities</span>
                         </div>
                     </div>
 
@@ -345,6 +309,8 @@
                             <!-- Mistakes lists -->
                         </div>
                     </div>
+
+                    <!-- Top single improvement removed; improvement summary now shown in results grid -->
 
                     <div class="game-over-actions">
                         <button id="restart-game-btn" class="btn btn-primary">
