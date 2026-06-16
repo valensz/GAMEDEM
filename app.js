@@ -571,10 +571,13 @@ const UI = {
         lobby: document.getElementById('lobby-screen'),
         parse: document.getElementById('parse-screen'),
         history: document.getElementById('history-screen'),
+        historyDetail: document.getElementById('history-detail-screen'),
         game: document.getElementById('game-screen'),
         leaderboard: document.getElementById('leaderboard-screen'),
         gameOver: document.getElementById('game-over-screen')
     },
+
+    currentHistoryEntry: null,
     
     showScreen(screenKey) {
         Object.keys(this.screens).forEach(key => {
@@ -595,6 +598,21 @@ const UI = {
             glow1.style.background = 'radial-gradient(circle, var(--accent) 0%, rgba(0,0,0,0) 70%)';
             glow2.style.background = 'radial-gradient(circle, var(--option-blue) 0%, rgba(0,0,0,0) 70%)';
         }
+    },
+
+    applyTheme(theme) {
+        const selected = theme || 'default';
+        const body = document.body;
+        body.classList.remove('theme-default', 'theme-crystal', 'theme-blossom', 'dark-theme');
+        body.classList.add(`theme-${selected}`);
+        localStorage.setItem('gcp_theme', selected);
+    },
+
+    initTheme() {
+        const saved = localStorage.getItem('gcp_theme') || 'default';
+        this.applyTheme(saved);
+        const selector = document.getElementById('theme-select');
+        if (selector) selector.value = saved;
     },
     
     // Updates global statistics shown in header
@@ -657,18 +675,211 @@ const UI = {
                 .map(([topic, count]) => `${topic}: ${count}`)
                 .join(', ') || 'No topic issues';
             return `
-                <div class="history-entry">
+                <button type="button" class="history-entry" data-history-id="${entry.id}" aria-label="Open report for ${entry.mode} session on ${entry.date}">
                     <div class="history-entry-top">
-                        <div><strong>${entry.date}</strong> · ${entry.mode.toUpperCase()}</div>
+                        <div>
+                            <strong>${entry.date}</strong> · ${entry.mode.toUpperCase()}
+                            <span class="history-entry-badge">View details</span>
+                        </div>
                         <div class="history-entry-score">${entry.accuracy}%</div>
                     </div>
                     <div class="history-entry-meta">
                         Answered: ${entry.totalAnswered} · Correct: ${entry.correctCount} · Mistakes: ${entry.mistakesCount}
                     </div>
                     <div class="history-entry-topics">${topics}</div>
-                </div>
+                </button>
             `;
         }).join('');
+    },
+
+    openHistoryEntry(entryId) {
+        const entry = this.getHistory().find(item => item.id.toString() === entryId.toString());
+        if (!entry) {
+            alert('Unable to load the selected history report.');
+            return;
+        }
+
+        this.currentHistoryEntry = entry;
+        const title = document.getElementById('history-detail-title');
+        title.textContent = `${entry.date} · ${entry.mode.toUpperCase()} Report`;
+        document.getElementById('history-detail-answered').textContent = entry.totalAnswered.toString();
+        document.getElementById('history-detail-accuracy').textContent = `${entry.accuracy}%`;
+
+        const improvementLines = Object.entries(entry.topicBreakdown || {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([topic, count]) => `${topic} — ${count} ${count === 1 ? 'mistake' : 'mistakes'}`);
+        document.getElementById('history-detail-category').innerHTML = improvementLines.length ? improvementLines.join('<br>') : '—';
+
+        const mistakesContainer = document.getElementById('history-detail-mistakes-container');
+        const mistakesList = document.getElementById('history-detail-mistakes-list');
+        if (entry.mistakes && entry.mistakes.length) {
+            mistakesContainer.style.display = 'block';
+            mistakesList.innerHTML = entry.mistakes.map(m => `
+                <div class="mistake-item">
+                    <div class="mistake-q-title">Q${m.qIndex}</div>
+                    <div class="mistake-q-ans">Your Answer: <span style="color: var(--error)">${m.selectedText}</span><br>Correct Answer: <strong>${m.correctText}</strong><br>Category: <strong>${m.category}</strong></div>
+                </div>
+            `).join('');
+        } else {
+            mistakesContainer.style.display = 'none';
+            mistakesList.innerHTML = '';
+        }
+
+        this.showScreen('historyDetail');
+    },
+
+    exportHistoryEntryPdf(entryId) {
+        const entry = entryId ? this.getHistory().find(item => item.id.toString() === entryId.toString()) : this.currentHistoryEntry;
+        if (!entry) {
+            alert('No session report selected to export.');
+            return;
+        }
+
+        const { jsPDF } = window.jspdf || {};
+        if (!jsPDF) {
+            alert('PDF export library is not loaded.');
+            return;
+        }
+
+        const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+        const margin = 40;
+        let y = 40;
+        doc.setFontSize(16);
+        doc.text('GCP Quest Session Report', margin, y);
+        y += 26;
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text(`${entry.date} — ${entry.mode.toUpperCase()} — ${entry.accuracy}%`, margin, y);
+        y += 18;
+        doc.setFont(undefined, 'normal');
+        doc.text(`Answered: ${entry.totalAnswered}, Correct: ${entry.correctCount}, Mistakes: ${entry.mistakesCount}`, margin, y);
+        y += 18;
+
+        const topicLines = Object.entries(entry.topicBreakdown || {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([topic, count]) => `${topic}: ${count} ${count === 1 ? 'mistake' : 'mistakes'}`);
+        doc.text('Improvement topics:', margin, y);
+        y += 16;
+        if (topicLines.length) {
+            topicLines.forEach(line => {
+                const wrapped = doc.splitTextToSize(line, 510);
+                doc.text(wrapped, margin, y);
+                y += wrapped.length * 14;
+            });
+        } else {
+            doc.text('None', margin, y);
+            y += 16;
+        }
+
+        if (entry.mistakes && entry.mistakes.length) {
+            y += 6;
+            doc.text('Mistakes Review:', margin, y);
+            y += 16;
+            entry.mistakes.forEach(m => {
+                if (y > 720) { doc.addPage(); y = 40; }
+                doc.setFont(undefined, 'bold');
+                doc.text(`Q${m.qIndex} — ${m.category}`, margin, y);
+                y += 14;
+                doc.setFont(undefined, 'normal');
+                const answerText = `Your Answer: ${m.selectedText}`;
+                const correctText = `Correct Answer: ${m.correctText}`;
+                const wrappedAnswer = doc.splitTextToSize(answerText, 510);
+                const wrappedCorrect = doc.splitTextToSize(correctText, 510);
+                doc.text(wrappedAnswer, margin, y);
+                y += wrappedAnswer.length * 14;
+                doc.text(wrappedCorrect, margin, y);
+                y += wrappedCorrect.length * 14 + 8;
+            });
+        }
+
+        const safeFilename = `GCP_Quest_Report_${entry.date.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+        doc.save(safeFilename);
+    },
+
+    exportGameResultPdf() {
+        const { jsPDF } = window.jspdf || {};
+        if (!jsPDF) {
+            alert('PDF export library is not loaded.');
+            return;
+        }
+
+        if (!currentGame) {
+            alert('No completed game available for export.');
+            return;
+        }
+
+        const totalAnswered = currentGame.currentIndex;
+        const accPct = totalAnswered > 0 ? Math.round((currentGame.accuracyCount / totalAnswered) * 100) : 0;
+        const mistakes = currentGame.answersLog.filter(a => !a.isCorrect);
+        const topicBreakdown = mistakes.reduce((acc, m) => {
+            acc[m.category] = (acc[m.category] || 0) + 1;
+            return acc;
+        }, {});
+
+        const entry = {
+            date: new Date().toLocaleString(),
+            mode: currentGame.mode || 'unknown',
+            totalAnswered,
+            correctCount: currentGame.accuracyCount,
+            accuracy: accPct,
+            mistakesCount: mistakes.length,
+            topicBreakdown,
+            mistakes: mistakes.map(m => ({ qIndex: m.qIndex, category: m.category, selectedText: m.selectedText, correctText: m.correctText }))
+        };
+
+        const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+        const margin = 40;
+        let y = 40;
+        doc.setFontSize(16);
+        doc.text('GCP Quest Session Report', margin, y);
+        y += 26;
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text(`${entry.date} — ${entry.mode.toUpperCase()} — ${entry.accuracy}%`, margin, y);
+        y += 18;
+        doc.setFont(undefined, 'normal');
+        doc.text(`Answered: ${entry.totalAnswered}, Correct: ${entry.correctCount}, Mistakes: ${entry.mistakesCount}`, margin, y);
+        y += 18;
+
+        const topicLines = Object.entries(entry.topicBreakdown || {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([topic, count]) => `${topic}: ${count} ${count === 1 ? 'mistake' : 'mistakes'}`);
+        doc.text('Improvement topics:', margin, y);
+        y += 16;
+        if (topicLines.length) {
+            topicLines.forEach(line => {
+                const wrapped = doc.splitTextToSize(line, 510);
+                doc.text(wrapped, margin, y);
+                y += wrapped.length * 14;
+            });
+        } else {
+            doc.text('None', margin, y);
+            y += 16;
+        }
+
+        if (entry.mistakes && entry.mistakes.length) {
+            y += 6;
+            doc.text('Mistakes Review:', margin, y);
+            y += 16;
+            entry.mistakes.forEach(m => {
+                if (y > 720) { doc.addPage(); y = 40; }
+                doc.setFont(undefined, 'bold');
+                doc.text(`Q${m.qIndex} — ${m.category}`, margin, y);
+                y += 14;
+                doc.setFont(undefined, 'normal');
+                const answerText = `Your Answer: ${m.selectedText}`;
+                const correctText = `Correct Answer: ${m.correctText}`;
+                const wrappedAnswer = doc.splitTextToSize(answerText, 510);
+                const wrappedCorrect = doc.splitTextToSize(correctText, 510);
+                doc.text(wrappedAnswer, margin, y);
+                y += wrappedAnswer.length * 14;
+                doc.text(wrappedCorrect, margin, y);
+                y += wrappedCorrect.length * 14 + 8;
+            });
+        }
+
+        const safeFilename = `GCP_Quest_Session_Report_${entry.date.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+        doc.save(safeFilename);
     },
 
     exportHistoryPdf() {
@@ -764,8 +975,6 @@ const UI = {
             readyZone.style.display  = 'block';
             document.getElementById('db-question-count').textContent =
                 `Database Ready: ${questionsDb.length} Questions Loaded`;
-            document.getElementById('db-source-name').textContent =
-                localStorage.getItem('gcp_db_source') || 'kahoot.pdf';
             return;
         }
 
@@ -810,7 +1019,6 @@ const UI = {
             readyZone.style.display  = 'block';
             document.getElementById('db-question-count').textContent =
                 `Database Ready: ${questions.length} Questions Loaded`;
-            document.getElementById('db-source-name').textContent = 'kahoot.pdf';
 
             UI.showScreen('lobby');
         } catch (err) {
@@ -1375,7 +1583,8 @@ const UI = {
 
 // Application Event Listeners & Bootstrapping
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Initialize statistics header
+    // 1. Initialize theme and statistics header
+    UI.initTheme();
     UI.updateHeaderStats();
 
     // 2. Auto-load the bundled default PDF (or use localStorage cache)
@@ -1493,6 +1702,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('close-history-btn').addEventListener('click', () => {
         UI.showScreen('lobby');
         UI.updateHeaderStats();
+    });
+
+    document.getElementById('history-list').addEventListener('click', (event) => {
+        const button = event.target.closest('.history-entry');
+        if (!button) return;
+        const entryId = button.dataset.historyId;
+        if (entryId) {
+            UI.openHistoryEntry(entryId);
+        }
+    });
+
+    document.getElementById('export-history-entry-pdf-btn').addEventListener('click', () => {
+        UI.exportHistoryEntryPdf();
+    });
+
+    document.getElementById('back-history-btn').addEventListener('click', () => {
+        UI.showScreen('history');
+        UI.updateHeaderStats();
+    });
+
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) {
+        themeSelect.addEventListener('change', (event) => {
+            UI.applyTheme(event.target.value);
+        });
+    }
+
+    document.getElementById('export-results-pdf-btn').addEventListener('click', () => {
+        UI.exportGameResultPdf();
     });
     
     // 6. Next Question click overlay actions

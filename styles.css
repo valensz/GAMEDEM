@@ -15,16 +15,16 @@
     --accent: hsl(263, 85%, 62%);
     --accent-light: hsl(263, 90%, 72%);
     --accent-glow: hsla(263, 85%, 62%, 0.4);
-    
+
     --success: hsl(145, 80%, 42%);
     --success-glow: hsla(145, 80%, 42%, 0.35);
-    
+
     --error: hsl(355, 85%, 55%);
     --error-glow: hsla(355, 85%, 55%, 0.35);
-    
+
     --warning: hsl(40, 95%, 50%);
     --warning-glow: hsla(40, 95%, 50%, 0.3);
-    
+
     /* Kahoot Specific Premium Colors */
     --option-red: hsl(354, 85%, 54%);
     --option-blue: hsl(205, 95%, 50%);
@@ -36,6 +36,46 @@
     --radius-md: 12px;
     --radius-sm: 8px;
     --transition-speed: 0.3s;
+}
+
+body.theme-crystal {
+    --bg-primary: hsl(190, 30%, 10%);
+    --bg-secondary: hsl(190, 25%, 14%);
+    --bg-card: rgba(18, 38, 58, 0.78);
+    --border-color: rgba(173, 235, 255, 0.22);
+    --text-main: hsl(210, 30%, 98%);
+    --text-muted: hsl(190, 12%, 78%);
+    --accent: hsl(185, 92%, 72%);
+    --accent-light: hsl(180, 95%, 82%);
+    --accent-glow: hsla(180, 95%, 72%, 0.35);
+    --success: hsl(160, 75%, 45%);
+    --success-glow: hsla(160, 75%, 45%, 0.35);
+    --error: hsl(355, 72%, 62%);
+    --warning: hsl(42, 100%, 64%);
+    --option-red: hsl(352, 88%, 65%);
+    --option-blue: hsl(205, 95%, 50%);
+    --option-yellow: hsl(48, 96%, 68%);
+    --option-green: hsl(145, 70%, 46%);
+}
+
+body.theme-blossom {
+    --bg-primary: hsl(338, 45%, 12%);
+    --bg-secondary: hsl(338, 28%, 18%);
+    --bg-card: rgba(35, 20, 35, 0.78);
+    --border-color: rgba(255, 163, 181, 0.24);
+    --text-main: hsl(330, 20%, 96%);
+    --text-muted: hsl(330, 20%, 80%);
+    --accent: hsl(340, 78%, 66%);
+    --accent-light: hsl(334, 90%, 84%);
+    --accent-glow: hsla(340, 90%, 72%, 0.32);
+    --success: hsl(155, 65%, 42%);
+    --success-glow: hsla(155, 65%, 42%, 0.35);
+    --error: hsl(357, 74%, 62%);
+    --warning: hsl(40, 98%, 70%);
+    --option-red: hsl(345, 92%, 63%);
+    --option-blue: hsl(210, 95%, 58%);
+    --option-yellow: hsl(47, 96%, 67%);
+    --option-green: hsl(145, 65%, 44%);
 }
 
 /* Base resets & styles */
@@ -149,6 +189,46 @@ body {
 .header-actions {
     display: flex;
     gap: 12px;
+    align-items: center;
+}
+.theme-switcher {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+}
+.theme-switcher-label {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+.theme-switcher-label .label-icon {
+    font-size: 0.9em;
+    color: var(--accent);
+}
+.theme-select {
+    min-width: 180px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-main);
+    font-size: 14px;
+    outline: none;
+    transition: all var(--transition-speed) ease;
+}
+.theme-select:hover,
+.theme-select:focus {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: var(--accent);
+}
+.theme-select option {
+    color: #111;
 }
 .header-actions .btn {
     white-space: nowrap;
@@ -704,6 +784,7 @@ pre.code-block {
     gap: 15px;
 }
 .answer-card {
+    color: #ffffff;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
@@ -1209,6 +1290,28 @@ pre.code-block {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     padding: 18px;
+    text-align: left;
+}
+button.history-entry {
+    all: unset;
+    display: block;
+    width: 100%;
+    cursor: pointer;
+}
+button.history-entry:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+.history-entry-badge {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 .history-entry-top {
     display: flex;
@@ -1259,7 +1362,8 @@ pre.code-block {
 }
 
 /* Make improvement summary compact and constrained inside its result box */
-#result-category {
+#result-category,
+#history-detail-category {
     font-size: 12px;
     font-weight: 600;
     color: var(--text-muted);

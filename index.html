@@ -15,7 +15,7 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css">
 </head>
-<body class="dark-theme">
+<body class="theme-default">
     <div class="app-container">
         <!-- Floating Ambient Background Elements -->
         <div class="ambient-glow glow-1"></div>
@@ -28,9 +28,14 @@
                 <span class="logo-text">GCP ACE <span class="accent-text">Quest</span></span>
             </div>
             <div class="header-actions">
-                <button id="go-to-question-runner-btn" class="btn btn-secondary">
-                    <i class="fa-solid fa-vial"></i> Test Questions
-                </button>
+                <div class="theme-switcher">
+                    <label for="theme-select" class="theme-switcher-label"><i class="fa-solid fa-palette label-icon" aria-hidden="true"></i> Theme Selector</label>
+                    <select id="theme-select" class="theme-select" aria-label="Select theme">
+                        <option value="default">Default</option>
+                        <option value="crystal">Crystal</option>
+                        <option value="blossom">Blossom</option>
+                    </select>
+                </div>
             </div>
             <div class="header-stats" id="header-stats" style="display: none;">
                 <div class="stat-badge">
@@ -64,7 +69,6 @@
                             <i class="fa-solid fa-database db-icon"></i>
                             <div>
                                 <h3 id="db-question-count">Database Ready: 336 Questions Loaded</h3>
-                                <p>Source: <span id="db-source-name">kahoot.pdf</span></p>
                             </div>
                         </div>
                         
@@ -116,6 +120,9 @@
                             </button>
                             <button id="open-history-btn" class="btn btn-secondary btn-large">
                                 <i class="fa-solid fa-clock-rotate-left"></i> View History
+                            </button>
+                            <button id="go-to-question-runner-btn" class="btn btn-secondary btn-large">
+                                <i class="fa-solid fa-vial"></i> Test Questions
                             </button>
                         </div>
                     </div>
@@ -170,6 +177,49 @@
                     <div class="game-over-actions">
                         <button id="close-history-btn" class="btn btn-secondary">
                             <i class="fa-solid fa-arrow-left"></i> Back to Lobby
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2b. History Entry Detail Screen -->
+            <section id="history-detail-screen" class="screen">
+                <div class="glass-card history-detail-card">
+                    <div class="history-header">
+                        <div>
+                            <h2 id="history-detail-title">Session Report</h2>
+                            <p class="history-subtitle">Review the selected quiz report and export it as a PDF.</p>
+                        </div>
+                        <div class="history-actions">
+                            <button id="export-history-entry-pdf-btn" class="btn btn-primary">
+                                <i class="fa-solid fa-file-pdf"></i> Export Report
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="results-grid">
+                        <div class="result-box">
+                            <span class="result-val" id="history-detail-answered">0</span>
+                            <span class="result-lbl">Questions Answered</span>
+                        </div>
+                        <div class="result-box">
+                            <span class="result-val" id="history-detail-accuracy">0%</span>
+                            <span class="result-lbl">Accuracy</span>
+                        </div>
+                        <div class="result-box">
+                            <div class="result-val" id="history-detail-category">—</div>
+                            <span class="result-lbl">Improvement Opportunities</span>
+                        </div>
+                    </div>
+
+                    <div class="mistakes-container" id="history-detail-mistakes-container" style="display: none;">
+                        <h3>Mistakes Review</h3>
+                        <div class="mistakes-list" id="history-detail-mistakes-list"></div>
+                    </div>
+
+                    <div class="game-over-actions">
+                        <button id="back-history-btn" class="btn btn-secondary">
+                            <i class="fa-solid fa-arrow-left"></i> Back to History
                         </button>
                     </div>
                 </div>
@@ -353,6 +403,9 @@
                     <div class="game-over-actions">
                         <button id="restart-game-btn" class="btn btn-primary">
                             <i class="fa-solid fa-rotate-left"></i> Play Again
+                        </button>
+                        <button id="export-results-pdf-btn" class="btn btn-secondary">
+                            <i class="fa-solid fa-file-pdf"></i> Export to PDF
                         </button>
                         <button id="back-lobby-btn" class="btn btn-secondary">
                             <i class="fa-solid fa-house"></i> Return to Lobby
