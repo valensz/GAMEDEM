@@ -1900,4 +1900,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
     }
+
+    // If this is the standalone game page, make back/close buttons navigate
+    // to the index (test selector) so users return to the lobby page instead
+    // of toggling in-page screens.
+    if (isGamePage) {
+        const headerBack = document.querySelector('.header-actions a');
+        if (headerBack) headerBack.href = 'index.html';
+
+        ['close-history-btn', 'back-to-game-btn', 'back-lobby-btn', 'back-history-btn'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            // remove previous click handlers by cloning node
+            const clone = el.cloneNode(true);
+            el.parentNode.replaceChild(clone, el);
+            clone.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                window.location.href = 'index.html';
+            });
+        });
+    }
 });
