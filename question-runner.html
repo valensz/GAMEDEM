@@ -42,8 +42,11 @@
               <i class="fa-solid fa-image"></i> Show Reference Image
             </button>
             <div class="option-list" id="option-list"></div>
-            <!-- Removed Check/Reset buttons: validation happens on selection like main app -->
-            <div id="check-result" class="status" style="margin-top:12px;"></div>
+            <div class="runner-actions" style="margin-top:12px; display:flex; gap:8px; align-items:center;">
+              <button id="validate-answer-btn" class="btn btn-primary" style="display:none;">Validate Answer</button>
+              <button id="reset-selection-btn" class="btn" style="display:none;">Reset Selection</button>
+              <div id="check-result" class="status" style="margin-top:0;"></div>
+            </div>
           </div>
 
           <div id="image-popup-overlay" class="image-popup-overlay" style="display:none;">
@@ -216,9 +219,11 @@
               multiSet.add(letter);
               btn.classList.add('multi-selected');
             }
-            if (multiSet.size === q.requiredSelections) {
-              validateAnswer(q, Array.from(multiSet));
-            }
+            // enable validate button when selection count matches required
+            const validateBtn = document.getElementById('validate-answer-btn');
+            if (validateBtn) validateBtn.disabled = (multiSet.size !== q.requiredSelections);
+            const resetBtn = document.getElementById('reset-selection-btn');
+            if (resetBtn) resetBtn.style.display = 'inline-flex';
           });
         } else {
           // single-select: immediate validation to mimic main app behavior
@@ -247,6 +252,30 @@
             requestAnimationFrame(() => overlay.classList.add('active'));
           };
         });
+      }
+
+      // Wire up runner action buttons for multi-select flow
+      const validateBtn = document.getElementById('validate-answer-btn');
+      const resetBtn = document.getElementById('reset-selection-btn');
+      if (validateBtn) {
+        validateBtn.style.display = q.isMultiple ? 'inline-flex' : 'none';
+        validateBtn.disabled = true;
+        validateBtn.onclick = () => {
+          const selected = Array.from(document.querySelectorAll('#option-list .answer-card.multi-selected')).map(b => b.dataset.option);
+          if (!selected || !selected.length) return;
+          validateAnswer(q, selected);
+        };
+      }
+      if (resetBtn) {
+        resetBtn.style.display = q.isMultiple ? 'inline-flex' : 'none';
+        resetBtn.onclick = () => {
+          document.querySelectorAll('#option-list .answer-card').forEach(btn => {
+            btn.classList.remove('multi-selected', 'correct-answer-highlight', 'wrong-answer-highlight', 'fade-out');
+            btn.disabled = false;
+          });
+          const resultEl = document.getElementById('check-result'); if (resultEl) resultEl.textContent = '';
+          if (validateBtn) validateBtn.disabled = true;
+        };
       }
 
       document.getElementById('check-result').textContent = '';
