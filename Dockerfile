@@ -1,12 +1,11 @@
-# Use a lightweight Nginx image to serve static frontend files
-FROM nginx:stable-alpine
+FROM node:20-alpine
 
-# Copy the app content into the default nginx web root
-COPY . /usr/share/nginx/html
+WORKDIR /usr/src/app
 
-# Use the container's default web port 80
-ENV PORT=80
-EXPOSE 80
+COPY package.json package-lock.json* ./
+RUN npm install --production
 
-# Start Nginx in the foreground on port 80
-CMD ["nginx", "-g", "daemon off;"]
+COPY . ./
+
+EXPOSE 3000
+CMD ["npm", "start"]

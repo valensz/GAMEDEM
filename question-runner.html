@@ -27,11 +27,11 @@
           <h2>Admin Test Mode</h2>
           <p class="history-subtitle">Load a specific question from the cached database and answer it individually.</p>
 
-          <div class="controls" style="margin-top: 20px; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <div class="controls" style="margin-top: 20px; gap: 12px; align-items: center; flex-wrap: wrap;">
             <label>Question # <input type="number" id="q-number" min="1" value="1"></label>
             <button id="run-q-btn" class="btn btn-primary">Load Question</button>
             <button id="clear-runner-btn" class="btn">Reset</button>
-            <span id="runner-status" class="status">Loaded questions: <strong id="runner-count">0</strong> (source: <strong id="runner-source">—</strong>)</span>
+            <span id="runner-status" class="status">Test: <strong id="runner-source">—</strong> — <strong id="runner-count">0</strong> questions loaded</span>
           </div>
 
           <div class="question-area" id="question-area" style="display:none; margin-top: 24px;">
@@ -61,10 +61,26 @@
   </div>
 
   <script>
-    function loadCachedQuestions() {
-      const cached = localStorage.getItem('gcp_questions_db');
+    async function loadCachedQuestions() {
       const countEl = document.getElementById('runner-count');
       const sourceEl = document.getElementById('runner-source');
+      const selectedTest = localStorage.getItem('gcp_selected_test');
+      const query = selectedTest ? `?testId=${encodeURIComponent(selectedTest)}` : '';
+      try {
+        const response = await fetch(`/api/questions${query}`);
+        if (response.ok) {
+          const payload = await response.json();
+          if (Array.isArray(payload.questions)) {
+            if (countEl) countEl.textContent = String(payload.questions.length);
+            if (sourceEl) sourceEl.textContent = payload.name ? `${payload.name}` : payload.source || 'shared questions';
+            return payload.questions;
+          }
+        }
+      } catch (err) {
+        // fall through to localStorage fallback
+      }
+
+      const cached = localStorage.getItem('gcp_questions_db');
       if (!cached) {
         if (countEl) countEl.textContent = '0';
         if (sourceEl) sourceEl.textContent = '—';
@@ -96,19 +112,22 @@
     }
 
     async function resolveReferenceImageUrl(questionId) {
+      const selectedTest = localStorage.getItem('gcp_selected_test');
       const numericId = Number(questionId);
       const extensions = ['png', 'jpg', 'jpeg', 'webp'];
       const candidates = [];
-      candidates.push(`Images/Question #${numericId}`);
-      candidates.push(`Images/Question ${numericId}`);
-      candidates.push(`Images/Question${numericId}`);
-      candidates.push(`Images/Question-${numericId}`);
-      candidates.push(`Images/Question_${numericId}`);
-      candidates.push(`Images/${numericId}`);
+      const prefix = selectedTest ? `/test-images/${encodeURIComponent(selectedTest)}` : '';
+      candidates.push(`Question #${numericId}`);
+      candidates.push(`Question ${numericId}`);
+      candidates.push(`Question${numericId}`);
+      candidates.push(`Question-${numericId}`);
+      candidates.push(`Question_${numericId}`);
+      candidates.push(`${numericId}`);
 
       for (const base of candidates) {
         for (const ext of extensions) {
-          const url = `${base}.${ext}`;
+          const relativeUrl = `${base}.${ext}`;
+          const url = prefix ? `${prefix}/${relativeUrl}` : relativeUrl;
           const encodedUrl = encodeImagePath(url);
           if (await imageUrlExists(encodedUrl)) {
             return encodedUrl;
@@ -197,9 +216,9 @@
               multiSet.add(letter);
               btn.classList.add('multi-selected');
             }
-            // enable check button if selected count equals required (guarded)
-            const cb = document.getElementById('check-answer-btn');
-            if (cb) cb.disabled = (multiSet.size !== q.requiredSelections);
+            if (multiSet.size === q.requiredSelections) {
+              validateAnswer(q, Array.from(multiSet));
+            }
           });
         } else {
           // single-select: immediate validation to mimic main app behavior
@@ -271,11 +290,9 @@
       document.getElementById('check-result').textContent = '';
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-      const savedTheme = localStorage.getItem('gcp_theme') || 'default';
-      document.body.classList.remove('dark-theme');
-      document.body.classList.add(`theme-${savedTheme}`);
-      const questions = loadCachedQuestions();
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (window.initTheme) window.initTheme();
+      const questions = await loadCachedQuestions();
       const checkBtnInit = document.getElementById('check-answer-btn');
       if (checkBtnInit) checkBtnInit.disabled = true;
       const statusEl = document.getElementById('runner-status');
@@ -283,8 +300,8 @@
         if (statusEl) statusEl.textContent = 'No cached database found. Upload a PDF in admin or on the main app first.';
       }
 
-      document.getElementById('run-q-btn').addEventListener('click', () => {
-        const loaded = loadCachedQuestions();
+      document.getElementById('run-q-btn').addEventListener('click', async () => {
+        const loaded = await loadCachedQuestions();
         if (!loaded) {
           if (statusEl) statusEl.textContent = 'No cached DB available.';
           return;
@@ -321,7 +338,10 @@
             setTimeout(() => {
               overlay.style.display = 'none';
               const preview = document.getElementById('question-image-preview');
-              if (preview) preview.src = '';
+              if (preview) {
+                preview.removeAttribute('src');
+                preview.alt = '';
+              }
             }, 220);
           }
         });
@@ -333,11 +353,15 @@
           setTimeout(() => {
             overlay.style.display = 'none';
             const preview = document.getElementById('question-image-preview');
-            if (preview) preview.src = '';
+            if (preview) {
+              preview.removeAttribute('src');
+              preview.alt = '';
+            }
           }, 220);
         });
       }
     });
   </script>
+<script src="theme.js"></script>
 </body>
 </html>

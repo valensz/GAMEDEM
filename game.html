@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Quiz Quest — Game</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body class="theme-default">
+  <div class="app-container">
+    <header class="app-header">
+      <div class="logo">
+        <i class="fa-solid fa-cloud-bolt logo-icon"></i>
+        <span class="logo-text">Quiz <span class="accent-text">Quest</span></span>
+      </div>
+      <div class="header-actions">
+        <a href="game.html" class="btn btn-secondary">
+          <i class="fa-solid fa-arrow-left"></i> Back to Game
+        </a>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <!-- Lobby / Config Screen (select options and start the quiz) -->
+      <section id="lobby-screen" class="screen active">
+        <div class="glass-card welcome-card">
+          <h1>Ready to Play</h1>
+          <p class="welcome-subtitle">Verify your selected quiz and configure the game below.</p>
+
+          <div class="db-status-banner">
+            <i class="fa-solid fa-database db-icon"></i>
+            <div>
+              <h3 id="db-question-count">Selected Test — 0 questions loaded</h3>
+              <p id="db-source-name" class="status" style="margin:0.25rem 0 0 0; font-size:0.95rem; color:var(--text-secondary);">—</p>
+            </div>
+          </div>
+
+          <div class="game-config" style="margin-top:1rem;">
+            <div class="config-group">
+              <label><i class="fa-solid fa-gamepad"></i> Game Mode</label>
+              <div class="mode-selector">
+                <button class="mode-btn active" data-mode="classic">
+                  <h4>Classic</h4>
+                  <p>Set number of questions. Focus on practice.</p>
+                </button>
+                <button class="mode-btn" data-mode="endless">
+                  <h4>Endless</h4>
+                  <p>Play until 3 wrong answers. Survival challenge.</p>
+                </button>
+                <button class="mode-btn" data-mode="exam">
+                  <h4>Mock Exam</h4>
+                  <p>50 timed questions with topic breakdown.</p>
+                </button>
+              </div>
+            </div>
+
+            <div class="config-row" style="margin-top:10px;">
+              <div class="config-group" id="question-count-group">
+                <label for="question-count-select"><i class="fa-solid fa-list-ol"></i> Question count</label>
+                <select id="question-count-select" class="form-input">
+                  <option value="10">10 Questions</option>
+                  <option value="20">20 Questions</option>
+                  <option value="50">50 Questions</option>
+                  <option value="all">All Questions</option>
+                </select>
+              </div>
+              <div class="config-group">
+                <label for="timer-select"><i class="fa-solid fa-stopwatch"></i> Timer per Question</label>
+                <select id="timer-select" class="form-input">
+                  <option value="20">20 Seconds</option>
+                  <option value="30" selected>30 Seconds</option>
+                  <option value="60">60 Seconds</option>
+                  <option value="0">No Timer</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="lobby-actions" style="margin-top:12px;">
+              <button id="start-game-btn" class="btn btn-primary btn-large"><i class="fa-solid fa-play"></i> Start Quest</button>
+              <button id="open-history-btn" class="btn btn-secondary btn-large"><i class="fa-solid fa-clock-rotate-left"></i> View History</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Include only the game-screen portion required by app.js -->
+      <section id="game-screen" class="screen">
+          <div class="game-meta-row">
+              <div class="game-progress">
+                  <span class="meta-label">QUESTION</span>
+                  <span class="meta-value" id="game-q-index">1/10</span>
+              </div>
+              <div class="game-score">
+                  <span class="meta-label">CORRECT</span>
+                  <span class="meta-value" id="game-score-val">0</span>
+              </div>
+              <div class="game-timer-container">
+                  <div class="timer-circle-wrap">
+                      <svg class="timer-svg" viewBox="0 0 36 36">
+                          <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                          <path class="circle-fill" id="timer-progress" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      </svg>
+                      <div class="timer-text" id="timer-sec">30</div>
+                  </div>
+              </div>
+          </div>
+
+          <div class="game-layout">
+              <div class="glass-card question-card">
+                  <div class="question-header">
+                      <span class="badge badge-accent" id="question-id-badge">Q1</span>
+                      <div class="question-header-actions">
+                          <button id="image-reference-btn" class="btn btn-secondary" style="display:none;">
+                              <i class="fa-solid fa-image"></i> Reference Image
+                          </button>
+                          <button id="lifeline-btn" class="btn btn-lifeline">
+                              <i class="fa-solid fa-users"></i> Ask Community (1)
+                          </button>
+                      </div>
+                  </div>
+                  <div class="question-body-scroll">
+                      <div class="question-text" id="question-text-content">Loading…</div>
+                  </div>
+              </div>
+
+              <div class="answers-grid" id="answers-grid"></div>
+          </div>
+
+          <div class="feedback-overlay" id="feedback-overlay">
+              <div class="feedback-content">
+                  <div class="feedback-status-row">
+                      <div class="feedback-title">
+                          <i class="fa-solid" id="feedback-icon"></i>
+                          <span id="feedback-message">Correct!</span>
+                      </div>
+                  </div>
+                  <div class="feedback-details">
+                      <div class="correct-answer-is">
+                          <strong>Correct Answer:</strong> <span id="correct-answer-letter">B</span>
+                      </div>
+                      <div id="hint-vote-chart-container" class="vote-chart-container" style="display: none;">
+                          <h4>Community Vote Distribution:</h4>
+                          <div class="vote-bars" id="vote-bars-list"></div>
+                      </div>
+                  </div>
+                  <div class="feedback-actions">
+                      <button id="next-question-btn" class="btn btn-primary">Next <i class="fa-solid fa-arrow-right"></i></button>
+                  </div>
+              </div>
+          </div>
+
+          <div id="image-popup-overlay" class="image-popup-overlay" style="display:none;">
+              <div class="image-popup-card">
+                  <button id="close-image-popup" class="btn btn-link close-image-btn"><i class="fa-solid fa-xmark"></i></button>
+                  <div class="popup-title">Reference Image for <span id="image-popup-question-id"></span></div>
+                  <img id="question-image-preview" src="about:blank" alt="Question reference image" />
+              </div>
+          </div>
+      </section>
+
+      <section id="history-screen" class="screen">
+        <div class="glass-card history-card">
+          <div class="history-header">
+            <div>
+              <h2>Performance History</h2>
+              <p class="history-subtitle">Review your recent sessions and keep your practice streak going.</p>
+            </div>
+            <div class="history-actions">
+              <button id="export-history-pdf-btn" class="btn btn-primary">
+                <i class="fa-solid fa-file-pdf"></i> Export PDF
+              </button>
+              <button id="clear-history-btn" class="btn btn-secondary">
+                <i class="fa-solid fa-trash"></i> Clear History
+              </button>
+            </div>
+          </div>
+          <div class="history-summary">
+            <span id="history-summary-text">No history recorded yet.</span>
+          </div>
+          <div class="history-list" id="history-list"></div>
+          <div class="game-over-actions">
+            <button id="close-history-btn" class="btn btn-secondary">
+              <i class="fa-solid fa-arrow-left"></i> Back to Game
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="history-detail-screen" class="screen">
+        <div class="glass-card history-detail-card">
+          <div class="history-header">
+            <div>
+              <h2 id="history-detail-title">Session Report</h2>
+              <p class="history-subtitle">Review the selected quiz report and export it as a PDF.</p>
+            </div>
+            <div class="history-actions">
+              <button id="export-history-entry-pdf-btn" class="btn btn-primary">
+                <i class="fa-solid fa-file-pdf"></i> Export Report
+              </button>
+            </div>
+          </div>
+          <div class="results-grid">
+            <div class="result-box">
+              <span class="result-val" id="history-detail-answered">0</span>
+              <span class="result-lbl">Questions Answered</span>
+            </div>
+            <div class="result-box">
+              <span class="result-val" id="history-detail-accuracy">0%</span>
+              <span class="result-lbl">Accuracy</span>
+            </div>
+            <div class="result-box">
+              <div class="result-val" id="history-detail-category">—</div>
+              <span class="result-lbl">Improvement Opportunities</span>
+            </div>
+          </div>
+          <div class="mistakes-container" id="history-detail-mistakes-container" style="display:none;">
+            <h3>Mistakes Review</h3>
+            <div class="mistakes-list" id="history-detail-mistakes-list"></div>
+          </div>
+          <div class="game-over-actions">
+            <button id="back-history-btn" class="btn btn-secondary">
+              <i class="fa-solid fa-arrow-left"></i> Back to History
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="game-over-screen" class="screen">
+        <div class="glass-card results-card">
+          <div class="history-header">
+            <div>
+              <h1>Session Complete</h1>
+              <p class="welcome-subtitle">Your results are ready. Review your performance and continue practicing.</p>
+            </div>
+            <div class="history-actions">
+              <button id="export-results-pdf-btn" class="btn btn-secondary">
+                <i class="fa-solid fa-file-pdf"></i> Export Results
+              </button>
+            </div>
+          </div>
+
+          <div class="results-grid">
+            <div class="result-box">
+              <span class="result-val" id="result-answered">0</span>
+              <span class="result-lbl">Questions Answered</span>
+            </div>
+            <div class="result-box">
+              <span class="result-val" id="result-accuracy">0%</span>
+              <span class="result-lbl">Accuracy</span>
+            </div>
+            <div class="result-box">
+              <div class="result-val" id="result-category">—</div>
+              <span class="result-lbl">Improvement Opportunities</span>
+            </div>
+          </div>
+
+          <div class="mistakes-container" id="mistakes-review-container" style="display:none;">
+            <h3>Mistakes Review</h3>
+            <div class="mistakes-list" id="mistakes-review-list"></div>
+          </div>
+
+          <div class="game-over-actions">
+            <button id="back-to-game-btn" class="btn btn-primary">
+              <i class="fa-solid fa-arrow-left"></i> Back to Game
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="leaderboard-screen" class="screen">
+        <div class="glass-card results-card">
+          <h2>Leaderboard</h2>
+          <div id="leaderboard-list" class="history-list"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="theme.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

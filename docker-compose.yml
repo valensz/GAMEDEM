@@ -7,5 +7,8 @@ services:
       dockerfile: Dockerfile
     container_name: gcp-ace-quiz-quest
     ports:
-      - "8080:80"        # Access at http://localhost:8080
+      - "8080:3000"        # Access at http://localhost:8080
     restart: unless-stopped
+    volumes:
+      - ./data:/usr/src/app/data
+      - ./logs:/usr/src/app/logs

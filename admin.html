@@ -29,11 +29,14 @@
     <div class="card">
       <h3>Upload PDF (used as question database)</h3>
       <div class="controls">
+        <input type="text" id="admin-test-name" placeholder="Enter test name" style="flex:1 1 220px; min-width:220px;" />
         <input type="file" id="admin-pdf-input" accept="application/pdf">
-        <button id="parse-pdf-btn" class="btn btn-primary">Parse & Save</button>
+        <button id="parse-pdf-btn" class="btn btn-primary">Upload Test PDF</button>
         <div id="parse-status" class="status"></div>
       </div>
-      <p class="status">Current cached questions: <span id="cached-count">0</span> (source: <span id="cached-source">none</span>)</p>
+      <p class="status">Total available tests: <span id="cached-count">0</span> (latest source: <span id="cached-source">none</span>)</p>
+      <div id="tests-list" class="status" style="margin-top:10px; line-height:1.6;">Loading tests…</div>
+      <div id="image-manager-panel" class="status" style="margin-top:16px; display:none; border:1px solid var(--border-color); padding:14px; border-radius:10px; background: var(--bg-card);"></div>
       <div style="margin-top:8px;">
         <button id="change-pw-btn" class="btn">Change Admin Password</button>
       </div>
@@ -73,7 +76,7 @@
       </div>
     </div>
 
-    <p style="margin-top:18px; font-size:0.9rem; color:var(--text-secondary)">Note: uploading a PDF will parse it client-side and store the parsed question DB in <strong>localStorage</strong> as `gcp_questions_db` and set `gcp_db_source` to the uploaded filename. The main app will use that cached DB.</p>
+    <p style="margin-top:18px; font-size:0.9rem; color:var(--text-secondary)">Note: uploading a PDF will send it to the server and update the shared question database for all users. The main app will fetch the shared questions automatically.</p>
   </div>
 
 <script>
@@ -150,22 +153,223 @@ async function parsePdfContent(arrayBuffer, onProgress) {
     return parsedQuestions;
 }
 
-function loadCached() {
-    const cached = localStorage.getItem('gcp_questions_db');
-    const source = localStorage.getItem('gcp_db_source') || 'kahoot.pdf';
-    if (cached) {
-        const questions = JSON.parse(cached);
-        document.getElementById('cached-count').textContent = questions.length;
-        document.getElementById('cached-source').textContent = source;
-        return questions;
+async function loadCached() {
+    const statusCount = document.getElementById('cached-count');
+    const statusSource = document.getElementById('cached-source');
+    const testsList = document.getElementById('tests-list');
+    try {
+        const response = await fetch('/api/tests');
+        if (response.ok) {
+            const payload = await response.json();
+            if (Array.isArray(payload.tests)) {
+                statusCount.textContent = payload.tests.length;
+                statusSource.textContent = payload.tests.length ? payload.tests[payload.tests.length - 1].source : 'shared questions';
+                testsList.innerHTML = payload.tests.length
+                    ? payload.tests.map(test => `<div style="display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:8px;"><span><strong>${test.name}</strong> — ${test.source}</span><div><button data-test-id="${test.id}" class="btn btn-secondary small-btn manage-images-btn">Images</button><button data-test-id="${test.id}" class="btn btn-secondary small-btn">Delete</button></div></div>`).join('')
+                    : 'No tests have been uploaded yet.';
+                attachDeleteButtons();
+                attachManageImageButtons();
+                return payload.tests;
+            }
+        }
+    } catch (err) {
+        // fallback to localStorage when server is unavailable
     }
-    document.getElementById('cached-count').textContent = 0;
-    document.getElementById('cached-source').textContent = 'none';
-    return null;
+
+    statusCount.textContent = 0;
+    statusSource.textContent = 'none';
+    testsList.innerHTML = 'No tests have been uploaded yet.';
+    return [];
 }
 
-function encodeImagePath(url) {
-    return url.split('/').map(part => encodeURIComponent(part)).join('/');
+async function fetchTestQuestions(testId = null) {
+    const query = testId ? `?testId=${encodeURIComponent(testId)}` : '';
+    try {
+        const response = await fetch(`/api/questions${query}`);
+        if (!response.ok) return null;
+        const payload = await response.json();
+        if (!payload || !Array.isArray(payload.questions)) return null;
+        return payload.questions;
+    } catch (err) {
+        return null;
+    }
+}
+
+async function loadCachedQuestions() {
+    const statusCount = document.getElementById('cached-count');
+    const statusSource = document.getElementById('cached-source');
+    const selectedTest = localStorage.getItem('gcp_selected_test');
+    let questions = await fetchTestQuestions(selectedTest);
+    if (questions) {
+        if (statusCount) statusCount.textContent = questions.length;
+        if (statusSource) statusSource.textContent = selectedTest ? `Using selected test` : 'Shared questions';
+        return questions;
+    }
+
+    const cached = localStorage.getItem('gcp_questions_db');
+    if (!cached) {
+        if (statusCount) statusCount.textContent = '0';
+        if (statusSource) statusSource.textContent = 'none';
+        return null;
+    }
+
+    try {
+        questions = JSON.parse(cached);
+        if (statusCount) statusCount.textContent = questions.length;
+        if (statusSource) statusSource.textContent = localStorage.getItem('gcp_db_source') || 'kahoot.pdf';
+        return questions;
+    } catch (e) {
+        if (statusCount) statusCount.textContent = '0';
+        if (statusSource) statusSource.textContent = 'none';
+        return null;
+    }
+}
+
+function attachDeleteButtons() {
+    document.querySelectorAll('.small-btn').forEach(button => {
+        if (button.classList.contains('manage-images-btn')) return;
+        const testId = button.dataset.testId;
+        if (!testId) return;
+        button.addEventListener('click', async () => {
+            if (!confirm('Delete this test? This cannot be undone.')) return;
+            try {
+                const response = await fetch(`/api/tests/${encodeURIComponent(testId)}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error('Delete failed');
+                await loadCached();
+            } catch (err) {
+                console.error(err);
+            }
+        });
+    });
+}
+
+function attachManageImageButtons() {
+    document.querySelectorAll('.manage-images-btn').forEach(button => {
+        const testId = button.dataset.testId;
+        if (!testId) return;
+        button.addEventListener('click', async () => {
+            await showImageManager(testId);
+        });
+    });
+}
+
+async function fetchTestImages(testId) {
+    try {
+        const response = await fetch(`/api/tests/${encodeURIComponent(testId)}/images`);
+        if (!response.ok) return null;
+        const payload = await response.json();
+        return Array.isArray(payload.images) ? payload.images : [];
+    } catch (err) {
+        console.error(err);
+        return null;
+    }
+}
+
+async function uploadTestImages(testId, files) {
+    const formData = new FormData();
+    for (const file of files) {
+        formData.append('images', file);
+    }
+    const response = await fetch(`/api/tests/${encodeURIComponent(testId)}/images`, {
+        method: 'POST',
+        body: formData
+    });
+    if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || `Upload failed (${response.status})`);
+    }
+    return await response.json();
+}
+
+async function deleteTestImage(testId, imageName) {
+    const response = await fetch(`/api/tests/${encodeURIComponent(testId)}/images/${encodeURIComponent(imageName)}`, {
+        method: 'DELETE'
+    });
+    if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || `Delete failed (${response.status})`);
+    }
+    return await response.json();
+}
+
+async function showImageManager(testId) {
+    const tests = await loadCached();
+    const test = tests.find(t => t.id === testId);
+    if (!test) return;
+    const images = await fetchTestImages(testId);
+    const panel = document.getElementById('image-manager-panel');
+    if (!panel) return;
+    const prefix = `/test-images/${encodeURIComponent(testId)}`;
+    const imageRows = images && images.length
+        ? images.map(img => {
+            const imgUrl = encodeImagePath(`${prefix}/${img}`);
+            return `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:10px; min-width:220px;">
+                <img src="${imgUrl}" alt="${img}" style="width:120px; max-height:90px; object-fit:contain; border:1px solid var(--border-color); border-radius:10px; background:#fff;" />
+                <span style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${img}</span>
+              </div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <a href="${imgUrl}" target="_blank" class="btn btn-secondary">Open</a>
+                <button data-image-name="${img}" class="btn btn-secondary small-btn image-delete-btn">Delete</button>
+              </div>
+            </div>`;
+          }).join('')
+        : '<p>No images uploaded for this test yet.</p>';
+
+    panel.innerHTML = `
+      <h3>Images for ${test.name}</h3>
+      <p class="status">Folder: <code>/test-images/${test.id}</code></p>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+        <input type="file" id="image-upload-input" accept="image/*" multiple />
+        <button id="upload-images-btn" class="btn btn-primary">Upload Images</button>
+        <button id="close-image-manager-btn" class="btn">Close</button>
+      </div>
+      <div id="image-list-container">${imageRows}</div>
+      <div id="image-manager-status" class="status"></div>
+    `;
+    panel.style.display = 'block';
+
+    document.getElementById('upload-images-btn').addEventListener('click', async () => {
+        const filesInput = document.getElementById('image-upload-input');
+        const status = document.getElementById('image-manager-status');
+        if (!filesInput || !filesInput.files.length) {
+            status.textContent = 'Please select one or more images to upload.';
+            return;
+        }
+        try {
+            status.textContent = 'Uploading images...';
+            await uploadTestImages(testId, [...filesInput.files]);
+            status.textContent = 'Images uploaded successfully.';
+            await showImageManager(testId);
+        } catch (err) {
+            console.error(err);
+            status.textContent = `Upload failed: ${err.message}`;
+        }
+    });
+
+    const closeButton = document.getElementById('close-image-manager-btn');
+    if (closeButton) {
+        closeButton.addEventListener('click', () => {
+            panel.style.display = 'none';
+        });
+    }
+
+    document.querySelectorAll('.image-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const imageName = btn.dataset.imageName;
+            const status = document.getElementById('image-manager-status');
+            if (!imageName) return;
+            if (!confirm(`Delete image ${imageName}?`)) return;
+            try {
+                status.textContent = 'Deleting image...';
+                await deleteTestImage(testId, imageName);
+                await showImageManager(testId);
+            } catch (err) {
+                console.error(err);
+                status.textContent = `Delete failed: ${err.message}`;
+            }
+        });
+    });
 }
 
 function encodeImagePath(url) {
@@ -182,23 +386,26 @@ async function adminImageUrlExists(url) {
 }
 
 async function resolveAdminReferenceImageUrl(questionId) {
+    const selectedTest = localStorage.getItem('gcp_selected_test');
     const numericId = Number(questionId);
     const extensions = ['png', 'jpg', 'jpeg', 'webp'];
     const candidates = [];
+    const prefix = selectedTest ? `/test-images/${encodeURIComponent(selectedTest)}` : '';
 
     if (numericId === 98) {
-        candidates.push('Images/98 Reesponse D');
+        candidates.push('98 Reesponse D');
     }
-    candidates.push(`Images/Question #${numericId}`);
-    candidates.push(`Images/Question ${numericId}`);
-    candidates.push(`Images/Question${numericId}`);
-    candidates.push(`Images/Question-${numericId}`);
-    candidates.push(`Images/Question_${numericId}`);
-    candidates.push(`Images/${numericId}`);
+    candidates.push(`Question #${numericId}`);
+    candidates.push(`Question ${numericId}`);
+    candidates.push(`Question${numericId}`);
+    candidates.push(`Question-${numericId}`);
+    candidates.push(`Question_${numericId}`);
+    candidates.push(`${numericId}`);
 
     for (const base of candidates) {
         for (const ext of extensions) {
-            const url = `${base}.${ext}`;
+            const relativeUrl = `${base}.${ext}`;
+            const url = prefix ? `${prefix}/${relativeUrl}` : relativeUrl;
             const encodedUrl = encodeImagePath(url);
             if (await adminImageUrlExists(encodedUrl)) {
                 return encodedUrl;
@@ -211,31 +418,64 @@ async function resolveAdminReferenceImageUrl(questionId) {
 
 document.getElementById('parse-pdf-btn').addEventListener('click', async () => {
     const input = document.getElementById('admin-pdf-input');
+    const nameInput = document.getElementById('admin-test-name');
     const status = document.getElementById('parse-status');
+    const testName = nameInput.value.trim();
+    if (!testName) { status.textContent = 'Please enter a test name.'; return; }
     if (!input.files || !input.files[0]) { status.textContent = 'Please select a PDF file first.'; return; }
     const file = input.files[0];
-    status.textContent = 'Parsing PDF...';
+    status.textContent = 'Uploading PDF to server...';
+
     try {
-        const buf = await file.arrayBuffer();
-        const questions = await parsePdfContent(buf, (page, total, text) => {
-            status.textContent = `Parsing page ${page}/${total}...`;
+        const formData = new FormData();
+        formData.append('pdf', file);
+        formData.append('name', testName);
+        const response = await fetch('/api/tests', {
+            method: 'POST',
+            body: formData
         });
-        if (!questions || questions.length === 0) { status.textContent = 'No questions parsed.'; return; }
-        localStorage.setItem('gcp_questions_db', JSON.stringify(questions));
-        localStorage.setItem('gcp_db_source', file.name);
-        status.textContent = `Parsed ${questions.length} questions and saved to localStorage.`;
-        loadCached();
+
+        let result;
+        try {
+            result = await response.json();
+        } catch (jsonErr) {
+            const clone = response.clone();
+            const text = await clone.text();
+            throw new Error(`Server returned ${response.status}: ${text || jsonErr.message}`);
+        }
+
+        if (!response.ok) {
+            status.textContent = result.error || `Upload failed (${response.status}).`;
+            return;
+        }
+
+        status.textContent = `Uploaded ${file.name} as test '${testName}'. ${result.count} questions parsed.`;
+        nameInput.value = '';
+        input.value = '';
+        await loadCached();
     } catch (e) {
-        console.error(e);
-        status.textContent = 'Error parsing PDF.';
+        console.error('Upload error:', e);
+        status.textContent = `Error uploading PDF. ${e.message || ''}`;
     }
 });
 
-document.getElementById('clear-cache-btn').addEventListener('click', () => {
-    localStorage.removeItem('gcp_questions_db');
-    localStorage.removeItem('gcp_db_source');
-    loadCached();
-    document.getElementById('runner-status').textContent = 'Cache cleared.';
+document.getElementById('clear-cache-btn').addEventListener('click', async () => {
+    const status = document.getElementById('runner-status');
+    try {
+        const response = await fetch('/api/questions', { method: 'DELETE' });
+        if (!response.ok) {
+            status.textContent = 'Could not clear shared database.';
+            return;
+        }
+        localStorage.removeItem('gcp_questions_db');
+        localStorage.removeItem('gcp_db_source');
+        localStorage.removeItem('gcp_selected_test');
+        await loadCached();
+        status.textContent = 'Shared question DB cleared.';
+    } catch (e) {
+        console.error(e);
+        status.textContent = 'Error clearing database.';
+    }
 });
 
 function renderQuestionToRunner(q) {
@@ -306,18 +546,18 @@ function renderQuestionToRunner(q) {
     document.getElementById('check-result').textContent = '';
 }
 
-document.getElementById('run-q-btn').addEventListener('click', () => {
-    const all = loadCached();
-    if (!all) { document.getElementById('runner-status').textContent = 'No cached DB. Upload and parse a PDF first.'; return; }
-    const idx = parseInt(document.getElementById('q-number').value, 10);
-    if (!idx || idx < 1 || idx > all.length) { document.getElementById('runner-status').textContent = 'Invalid question number.'; return; }
-    const q = all.find(x => x.id === idx) || all[idx-1];
-    if (!q) { document.getElementById('runner-status').textContent = 'Question not found.'; return; }
-    document.getElementById('runner-status').textContent = `Loaded question ${q.id}`;
-    renderQuestionToRunner(q);
-});
+document.getElementById('run-q-btn').addEventListener('click', async () => {
+      const all = await loadCachedQuestions();
+      if (!all) { document.getElementById('runner-status').textContent = 'No cached DB. Upload and parse a PDF first.'; return; }
+      const idx = parseInt(document.getElementById('q-number').value, 10);
+      if (!idx || idx < 1 || idx > all.length) { document.getElementById('runner-status').textContent = 'Invalid question number.'; return; }
+      const q = all.find(x => x.id === idx) || all[idx-1];
+      if (!q) { document.getElementById('runner-status').textContent = 'Question not found.'; return; }
+      document.getElementById('runner-status').textContent = `Loaded question ${q.id}`;
+      renderQuestionToRunner(q);
+    });
 
-document.getElementById('check-answer-btn').addEventListener('click', () => {
+document.getElementById('check-answer-btn').addEventListener('click', async () => {
     const list = Array.from(document.querySelectorAll('#option-list .answer-card'));
     const selected = list.filter(b => b.classList.contains('multi-selected')).map(b => b.dataset.option).sort();
     const resultEl = document.getElementById('check-result');
@@ -332,8 +572,12 @@ document.getElementById('check-answer-btn').addEventListener('click', () => {
       return;
     }
     const qid = parseInt(document.getElementById('q-number').value,10);
-    const all = loadCached();
+    const all = await loadCached();
     const q = all.find(x => x.id === qid) || all[qid-1];
+    if (!q) {
+      resultEl.textContent = 'Question not found.';
+      return;
+    }
     const correctLetters = String(q.answer || '').toUpperCase().match(/[A-Z]/g) || [];
 
     list.forEach(btn => {
@@ -366,7 +610,10 @@ if (adminImagePopupOverlay) {
             setTimeout(() => {
                 adminImagePopupOverlay.style.display = 'none';
                 const preview = document.getElementById('admin-question-image-preview');
-                if (preview) preview.src = '';
+                if (preview) {
+                    preview.removeAttribute('src');
+                    preview.alt = '';
+                }
             }, 220);
         }
     });
@@ -380,7 +627,10 @@ if (adminCloseImageBtn) {
         setTimeout(() => {
             adminImagePopupOverlay.style.display = 'none';
             const preview = document.getElementById('admin-question-image-preview');
-            if (preview) preview.src = '';
+            if (preview) {
+                preview.removeAttribute('src');
+                preview.alt = '';
+            }
         }, 220);
     });
 }
@@ -404,10 +654,15 @@ if (adminCloseImageBtn) {
   }
 })();
 (function() {
-  const savedTheme = localStorage.getItem('gcp_theme') || 'default';
-  document.body.classList.remove('dark-theme');
-  document.body.classList.add(`theme-${savedTheme}`);
+  if (window.initTheme) {
+    window.initTheme();
+  } else {
+    const savedTheme = localStorage.getItem('gcp_theme') || 'default';
+    document.body.classList.remove('dark-theme');
+    document.body.classList.add(`theme-${savedTheme}`);
+  }
 })();
 </script>
+<script src="theme.js"></script>
 </body>
 </html>

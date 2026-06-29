@@ -100,7 +100,67 @@ class SoundEngine {
 const sounds = new SoundEngine();
 let questionsDb = [];
 let currentGame = null;
+let selectedTestId = null;
 const referenceImageCache = new Map();
+
+async function fetchSharedQuestionDb(testId = null) {
+    try {
+        const url = testId ? `/api/questions?testId=${encodeURIComponent(testId)}` : '/api/questions';
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const payload = await response.json();
+        if (!payload || !Array.isArray(payload.questions)) return null;
+        return payload;
+    } catch (err) {
+        return null;
+    }
+}
+
+async function fetchTestList() {
+    try {
+        const response = await fetch('/api/tests');
+        if (!response.ok) return [];
+        const payload = await response.json();
+        return Array.isArray(payload.tests) ? payload.tests : [];
+    } catch (err) {
+        return [];
+    }
+}
+
+async function loadSelectedTest(testId) {
+    if (!testId) return false;
+    const shared = await fetchSharedQuestionDb(testId);
+    if (!shared) return false;
+
+    selectedTestId = shared.id || testId;
+    questionsDb = shared.questions;
+    localStorage.setItem('gcp_questions_db', JSON.stringify(questionsDb));
+    localStorage.setItem('gcp_db_source', shared.source || 'shared questions');
+    localStorage.setItem('gcp_selected_test', selectedTestId);
+
+    const sourceEl = document.getElementById('db-source-name');
+    if (sourceEl) sourceEl.textContent = shared.name || shared.source || '';
+    const countEl = document.getElementById('db-question-count');
+    if (countEl) countEl.textContent = `${shared.name || 'Selected Test'} — ${questionsDb.length} questions loaded`;
+
+    const uploadZone = document.getElementById('pdf-upload-section');
+    const readyZone = document.getElementById('database-ready-section');
+    if (uploadZone) uploadZone.style.display = 'none';
+    if (readyZone) readyZone.style.display = 'block';
+
+    return true;
+}
+
+async function ensureSelectedTestLoaded(testId = null) {
+    const requestedTestId = testId || localStorage.getItem('gcp_selected_test');
+    if (!requestedTestId) return false;
+
+    if (selectedTestId === requestedTestId && Array.isArray(questionsDb) && questionsDb.length) {
+        return true;
+    }
+
+    return loadSelectedTest(requestedTestId);
+}
 
 function encodeImagePath(url) {
     return url.split('/').map(part => encodeURIComponent(part)).join('/');
@@ -116,38 +176,41 @@ async function imageUrlExists(url) {
 }
 
 async function resolveReferenceImageUrl(questionId) {
-    if (referenceImageCache.has(questionId)) {
-        return referenceImageCache.get(questionId);
+    const activeTestId = selectedTestId || localStorage.getItem('gcp_selected_test');
+    const cacheKey = `${activeTestId || 'default'}|${questionId}`;
+    if (referenceImageCache.has(cacheKey)) {
+        return referenceImageCache.get(cacheKey);
     }
 
     const numericId = Number(questionId);
     const extensions = ['png', 'jpg', 'jpeg', 'webp'];
     const candidates = [];
+    const prefix = activeTestId ? `/test-images/${encodeURIComponent(activeTestId)}` : '';
 
     // Special exception for question 98
     if (numericId === 98) {
-        candidates.push('Images/98 Reesponse D');
+        candidates.push('98 Reesponse D');
     }
 
-    candidates.push(`Images/Question #${numericId}`);
-    candidates.push(`Images/Question ${numericId}`);
-    candidates.push(`Images/Question${numericId}`);
-    candidates.push(`Images/Question-${numericId}`);
-    candidates.push(`Images/Question_${numericId}`);
-    candidates.push(`Images/${numericId}`);
+    candidates.push(`Question #${numericId}`);
+    candidates.push(`Question ${numericId}`);
+    candidates.push(`Question${numericId}`);
+    candidates.push(`Question-${numericId}`);
+    candidates.push(`Question_${numericId}`);
+    candidates.push(`${numericId}`);
 
     for (const base of candidates) {
         for (const ext of extensions) {
-            const url = `${base}.${ext}`;
-            const encodedUrl = encodeImagePath(url);
+            const pathUrl = prefix ? `${prefix}/${base}.${ext}` : `${base}.${ext}`;
+            const encodedUrl = encodeImagePath(pathUrl);
             if (await imageUrlExists(encodedUrl)) {
-                referenceImageCache.set(questionId, encodedUrl);
+                referenceImageCache.set(cacheKey, encodedUrl);
                 return encodedUrl;
             }
         }
     }
 
-    referenceImageCache.set(questionId, null);
+    referenceImageCache.set(cacheKey, null);
     return null;
 }
 
@@ -581,22 +644,26 @@ const UI = {
     
     showScreen(screenKey) {
         Object.keys(this.screens).forEach(key => {
-            this.screens[key].classList.toggle('active', key === screenKey);
+            const el = this.screens[key];
+            if (!el) return;
+            el.classList.toggle('active', key === screenKey);
         });
         
         // Ambient background morphs slowly based on screen
         const glow1 = document.querySelector('.glow-1');
         const glow2 = document.querySelector('.glow-2');
-        if (screenKey === 'game') {
-            glow1.style.background = 'radial-gradient(circle, var(--option-red) 0%, rgba(0,0,0,0) 70%)';
-            glow2.style.background = 'radial-gradient(circle, var(--option-green) 0%, rgba(0,0,0,0) 70%)';
-        } else if (screenKey === 'gameOver') {
-            glow1.style.background = 'radial-gradient(circle, var(--warning) 0%, rgba(0,0,0,0) 70%)';
-            glow2.style.background = 'radial-gradient(circle, var(--accent) 0%, rgba(0,0,0,0) 70%)';
-            sounds.playFanfare();
-        } else {
-            glow1.style.background = 'radial-gradient(circle, var(--accent) 0%, rgba(0,0,0,0) 70%)';
-            glow2.style.background = 'radial-gradient(circle, var(--option-blue) 0%, rgba(0,0,0,0) 70%)';
+        if (glow1 && glow2) {
+            if (screenKey === 'game') {
+                glow1.style.background = 'radial-gradient(circle, var(--option-red) 0%, rgba(0,0,0,0) 70%)';
+                glow2.style.background = 'radial-gradient(circle, var(--option-green) 0%, rgba(0,0,0,0) 70%)';
+            } else if (screenKey === 'gameOver') {
+                glow1.style.background = 'radial-gradient(circle, var(--warning) 0%, rgba(0,0,0,0) 70%)';
+                glow2.style.background = 'radial-gradient(circle, var(--accent) 0%, rgba(0,0,0,0) 70%)';
+                sounds.playFanfare();
+            } else {
+                glow1.style.background = 'radial-gradient(circle, var(--accent) 0%, rgba(0,0,0,0) 70%)';
+                glow2.style.background = 'radial-gradient(circle, var(--option-blue) 0%, rgba(0,0,0,0) 70%)';
+            }
         }
     },
 
@@ -620,20 +687,25 @@ const UI = {
         const stats = JSON.parse(localStorage.getItem('gcp_quiz_stats')) || { totalQuestions: 0, correctQuestions: 0, totalGames: 0 };
         const accuracyDisplay = document.getElementById('accuracy-display');
         const headerStats = document.getElementById('header-stats');
+        const statsDashboard = document.getElementById('stats-dashboard');
+        const statsTotalPlayed = document.getElementById('stats-total-played');
+        const statsTotalQuestions = document.getElementById('stats-total-questions');
+        const statsAvgAccuracy = document.getElementById('stats-avg-accuracy');
         
         if ((stats.totalQuestions || 0) > 0) {
-            headerStats.style.display = 'flex';
-            const acc = Math.round((stats.correctQuestions / stats.totalQuestions) * 100);
-            accuracyDisplay.textContent = `Accuracy: ${acc}%`;
+            if (headerStats) headerStats.style.display = 'flex';
+            if (accuracyDisplay) {
+                const acc = Math.round((stats.correctQuestions / stats.totalQuestions) * 100);
+                accuracyDisplay.textContent = `Accuracy: ${acc}%`;
+            }
             
-            // Lobby stats
-            document.getElementById('stats-dashboard').style.display = 'block';
-            document.getElementById('stats-total-played').textContent = stats.totalGames || 0;
-            document.getElementById('stats-total-questions').textContent = stats.totalQuestions;
-            document.getElementById('stats-avg-accuracy').textContent = `${acc}%`;
+            if (statsDashboard) statsDashboard.style.display = 'block';
+            if (statsTotalPlayed) statsTotalPlayed.textContent = stats.totalGames || 0;
+            if (statsTotalQuestions) statsTotalQuestions.textContent = stats.totalQuestions;
+            if (statsAvgAccuracy) statsAvgAccuracy.textContent = `${Math.round((stats.correctQuestions / stats.totalQuestions) * 100)}%`;
         } else {
-            headerStats.style.display = 'none';
-            document.getElementById('stats-dashboard').style.display = 'none';
+            if (headerStats) headerStats.style.display = 'none';
+            if (statsDashboard) statsDashboard.style.display = 'none';
         }
     },
     
@@ -717,6 +789,7 @@ const UI = {
             mistakesList.innerHTML = entry.mistakes.map(m => `
                 <div class="mistake-item">
                     <div class="mistake-q-title">Q${m.qIndex}</div>
+                    ${m.questionText ? `<div class="mistake-q-title" style="font-weight: 500; margin-top: 6px;">${m.questionText}</div>` : ''}
                     <div class="mistake-q-ans">Your Answer: <span style="color: var(--error)">${m.selectedText}</span><br>Correct Answer: <strong>${m.correctText}</strong><br>Category: <strong>${m.category}</strong></div>
                 </div>
             `).join('');
@@ -778,9 +851,21 @@ const UI = {
             entry.mistakes.forEach(m => {
                 if (y > 720) { doc.addPage(); y = 40; }
                 doc.setFont(undefined, 'bold');
-                doc.text(`Q${m.qIndex} — ${m.category}`, margin, y);
+                doc.text(`Q${m.qIndex}`, margin, y);
                 y += 14;
                 doc.setFont(undefined, 'normal');
+                if (m.questionText) {
+                    const questionText = `Question: ${m.questionText}`;
+                    const wrappedQuestion = doc.splitTextToSize(questionText, 510);
+                    doc.text(wrappedQuestion, margin, y);
+                    y += wrappedQuestion.length * 14 + 6;
+                }
+                if (m.questionText && m.category) {
+                    const categoryText = `Category: ${m.category}`;
+                    const wrappedCategory = doc.splitTextToSize(categoryText, 510);
+                    doc.text(wrappedCategory, margin, y);
+                    y += wrappedCategory.length * 14;
+                }
                 const answerText = `Your Answer: ${m.selectedText}`;
                 const correctText = `Correct Answer: ${m.correctText}`;
                 const wrappedAnswer = doc.splitTextToSize(answerText, 510);
@@ -824,7 +909,13 @@ const UI = {
             accuracy: accPct,
             mistakesCount: mistakes.length,
             topicBreakdown,
-            mistakes: mistakes.map(m => ({ qIndex: m.qIndex, category: m.category, selectedText: m.selectedText, correctText: m.correctText }))
+            mistakes: mistakes.map(m => ({
+                qIndex: m.qIndex,
+                category: m.category,
+                selectedText: m.selectedText,
+                correctText: m.correctText,
+                questionText: m.questionText || ''
+            }))
         };
 
         const doc = new jsPDF({ unit: 'pt', format: 'letter' });
@@ -864,9 +955,21 @@ const UI = {
             entry.mistakes.forEach(m => {
                 if (y > 720) { doc.addPage(); y = 40; }
                 doc.setFont(undefined, 'bold');
-                doc.text(`Q${m.qIndex} — ${m.category}`, margin, y);
+                doc.text(`Q${m.qIndex}`, margin, y);
                 y += 14;
                 doc.setFont(undefined, 'normal');
+                if (m.questionText) {
+                    const questionText = `Question: ${m.questionText}`;
+                    const wrappedQuestion = doc.splitTextToSize(questionText, 510);
+                    doc.text(wrappedQuestion, margin, y);
+                    y += wrappedQuestion.length * 14 + 6;
+                }
+                if (m.questionText && m.category) {
+                    const categoryText = `Category: ${m.category}`;
+                    const wrappedCategory = doc.splitTextToSize(categoryText, 510);
+                    doc.text(wrappedCategory, margin, y);
+                    y += wrappedCategory.length * 14;
+                }
                 const answerText = `Your Answer: ${m.selectedText}`;
                 const correctText = `Correct Answer: ${m.correctText}`;
                 const wrappedAnswer = doc.splitTextToSize(answerText, 510);
@@ -957,83 +1060,73 @@ const UI = {
             accuracy: accPct,
             mistakesCount: mistakes.length,
             topicBreakdown,
-            mistakes: mistakes.map(m => ({ qIndex: m.qIndex, category: m.category, selectedText: m.selectedText, correctText: m.correctText }))
+            mistakes: mistakes.map(m => ({
+                qIndex: m.qIndex,
+                category: m.category,
+                selectedText: m.selectedText,
+                correctText: m.correctText,
+                questionText: m.questionText || ''
+            }))
         };
         this.saveHistoryEntry(entry);
     },
 
-    // Initialize or auto-load the default bundled PDF
+    // Initialize or auto-load available tests from server DB and set up the lobby
     async autoLoadDefaultPdf() {
         const uploadZone = document.getElementById('pdf-upload-section');
         const readyZone  = document.getElementById('database-ready-section');
+        const testSelect = document.getElementById('test-select');
+        const startBtn   = document.getElementById('start-game-btn');
+        const dbCountEl  = document.getElementById('db-question-count');
+        const sourceEl   = document.getElementById('db-source-name');
+        const noTestsMsg = document.getElementById('no-tests-message');
 
-        // 1. If questions are already cached in localStorage, use them instantly
-        const cached = localStorage.getItem('gcp_questions_db');
-        if (cached) {
-            questionsDb = JSON.parse(cached);
-            uploadZone.style.display = 'none';
-            readyZone.style.display  = 'block';
-            document.getElementById('db-question-count').textContent =
-                `Database Ready: ${questionsDb.length} Questions Loaded`;
-            return;
-        }
+        const tests = await fetchTestList();
 
-        // 2. Otherwise fetch the bundled PDF and parse it
-        uploadZone.style.display = 'flex';  // show the spinner
-        readyZone.style.display  = 'none';
-
-        try {
-            const response = await fetch('./kahoot.pdf');
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const arrayBuffer = await response.arrayBuffer();
-
-            // Show the full parse screen so the user sees progress
-            UI.showScreen('parse');
-            const fill        = document.getElementById('parse-progress-fill');
-            const pageStatus  = document.getElementById('parse-page-status');
-            const countStatus = document.getElementById('parse-count-status');
-
-            const questions = await parsePdfContent(
-                arrayBuffer,
-                (page, total, currentText) => {
-                    const pct = Math.round((page / total) * 100);
-                    fill.style.width   = `${pct}%`;
-                    pageStatus.textContent  = `Processing Page ${page}/${total}...`;
-                    const matches = currentText.match(/Question\s+#/gi);
-                    countStatus.textContent = `${matches ? matches.length : 0} Questions extracted`;
-                }
-            );
-
-            if (questions.length === 0) {
-                alert('Could not extract questions from the default PDF. Please load a different PDF.');
-                UI.showScreen('lobby');
-                uploadZone.style.display = 'flex';
-                return;
+        // If there are tests in the DB show the selector, otherwise show a 'stay tuned' placeholder
+        if (tests.length) {
+            if (testSelect) {
+                testSelect.innerHTML = tests.map(test => `<option value="${test.id}">${test.name}</option>`).join('');
+                testSelect.disabled = false;
             }
-
-            localStorage.setItem('gcp_questions_db', JSON.stringify(questions));
-            localStorage.setItem('gcp_db_source', 'kahoot.pdf');
-            questionsDb = questions;
-
-            uploadZone.style.display = 'none';
-            readyZone.style.display  = 'block';
-            document.getElementById('db-question-count').textContent =
-                `Database Ready: ${questions.length} Questions Loaded`;
-
-            UI.showScreen('lobby');
-        } catch (err) {
-            console.error('Could not auto-load default PDF:', err);
-            // Error: kahoot.pdf not found or unreadable
-            uploadZone.className = 'upload-zone error-zone';
-            uploadZone.innerHTML = `
-                <i class="fa-solid fa-circle-exclamation error-icon"></i>
-                <h3>Error Loading Question Database</h3>
-                <p>The kahoot.pdf file could not be found or loaded.</p>
-                <p style="font-size: 0.9rem; color: var(--text-secondary);">Please ensure kahoot.pdf is in the application directory.</p>
-            `;
-            readyZone.style.display = 'none';
-            UI.showScreen('lobby');
+            if (dbCountEl) dbCountEl.textContent = `${tests.reduce((acc,t)=>acc + (t.count||0), 0) || tests.length} Tests Available`;
+            if (sourceEl) sourceEl.textContent = '';
+            if (noTestsMsg) noTestsMsg.style.display = 'none';
+            if (startBtn) startBtn.disabled = false;
+        } else {
+            if (testSelect) {
+                testSelect.innerHTML = '<option value="">Stay tuned for updates</option>';
+                testSelect.disabled = true;
+            }
+            if (dbCountEl) dbCountEl.textContent = 'No tests available yet';
+            if (sourceEl) sourceEl.textContent = 'Stay tuned for updates';
+            if (noTestsMsg) noTestsMsg.style.display = 'block';
+            if (startBtn) startBtn.disabled = true;
         }
+
+        // Wire up selection change (only if selector exists)
+        if (testSelect) {
+            testSelect.addEventListener('change', async () => {
+                const selected = testSelect.value;
+                if (!selected) return;
+                await loadSelectedTest(selected);
+            });
+        }
+
+        // Attempt to load saved or first available test
+        const savedTest = localStorage.getItem('gcp_selected_test');
+        const selectedTest = savedTest && tests.some(t => t.id === savedTest)
+            ? savedTest
+            : (tests.length ? tests[0].id : null);
+
+        if (selectedTest) {
+            await loadSelectedTest(selectedTest);
+        }
+
+        // Hide the upload spinner and show the lobby ready state (if elements exist)
+        if (uploadZone) uploadZone.style.display = 'none';
+        if (readyZone) readyZone.style.display = 'block';
+        if (document.getElementById('lobby-screen')) UI.showScreen('lobby');
     },
     
     // Show current question in interface
@@ -1222,7 +1315,10 @@ const UI = {
         setTimeout(() => {
             overlay.style.display = 'none';
             const preview = document.getElementById('question-image-preview');
-            if (preview) preview.src = '';
+            if (preview) {
+                preview.removeAttribute('src');
+                preview.alt = '';
+            }
         }, 220);
     },
     
@@ -1546,7 +1642,8 @@ const UI = {
 
                 const title = document.createElement('div');
                 title.className = 'mistake-q-title';
-                title.innerHTML = `Q${m.qIndex}: ${m.questionText.substring(0, 140)}...`;
+                const questionPreview = m.questionText ? `${m.questionText.substring(0, 140)}${m.questionText.length > 140 ? '...' : ''}` : `Q${m.qIndex} — ${m.category}`;
+                title.innerHTML = `Q${m.qIndex}: ${questionPreview}`;
 
                 const answerSummary = document.createElement('div');
                 answerSummary.className = 'mistake-q-ans';
@@ -1587,49 +1684,56 @@ document.addEventListener('DOMContentLoaded', async () => {
     UI.initTheme();
     UI.updateHeaderStats();
 
-    // 2. Auto-load the bundled default PDF (or use localStorage cache)
-    await UI.autoLoadDefaultPdf();
+    const isLobbyPage = Boolean(document.getElementById('database-ready-section') || document.getElementById('test-select'));
+    const isGamePage = window.location.pathname.includes('game.html');
+
+    if (isLobbyPage) {
+        await UI.autoLoadDefaultPdf();
+    }
+
+    if (isGamePage) {
+        const savedTest = localStorage.getItem('gcp_selected_test');
+        if (savedTest) {
+            await ensureSelectedTestLoaded(savedTest);
+        }
+    }
 
     // ── Shared PDF parse helper (used by auto-load fallback & manual upload) ──
     async function handlePdfFile(file) {
-        UI.showScreen('parse');
-        const fill        = document.getElementById('parse-progress-fill');
-        const pageStatus  = document.getElementById('parse-page-status');
-        const countStatus = document.getElementById('parse-count-status');
-
+        // Upload the PDF to the server which parses and stores it in the DB.
+        const statusEl = document.getElementById('parse-status') || null;
         try {
-            const arrayBuffer = await file.arrayBuffer();
-            const questions   = await parsePdfContent(arrayBuffer, (page, total, currentText) => {
-                const pct = Math.round((page / total) * 100);
-                fill.style.width        = `${pct}%`;
-                pageStatus.textContent  = `Processing Page ${page}/${total}...`;
-                const matches = currentText.match(/Question\s+#/gi);
-                countStatus.textContent = `${matches ? matches.length : 0} Questions extracted`;
-            });
+            if (statusEl) statusEl.textContent = 'Uploading PDF to server...';
+            const formData = new FormData();
+            formData.append('pdf', file);
+            // Use file name (without extension) as a default test name
+            const defaultName = file.name ? file.name.replace(/\.[^/.]+$/, '') : `Test ${Date.now()}`;
+            formData.append('name', defaultName);
 
-            if (questions.length === 0) {
-                alert('No questions could be extracted. Please check the PDF format.');
-                UI.showScreen('lobby');
-                return;
+            const resp = await fetch('/api/tests', { method: 'POST', body: formData });
+            const payload = await resp.json().catch(() => null);
+            if (!resp.ok) {
+                const errMsg = payload && payload.error ? payload.error : `Upload failed (${resp.status})`;
+                throw new Error(errMsg);
             }
 
-            localStorage.setItem('gcp_questions_db', JSON.stringify(questions));
-            localStorage.setItem('gcp_db_source', file.name);
-            questionsDb = questions;
+            const newTest = payload.test;
+            // Refresh UI to use the newly created DB test
+            await loadSelectedTest(newTest.id);
 
-            // Refresh the db-ready section
             const uploadZone = document.getElementById('pdf-upload-section');
             const readyZone  = document.getElementById('database-ready-section');
-            uploadZone.style.display = 'none';
-            readyZone.style.display  = 'block';
-            document.getElementById('db-question-count').textContent =
-                `Database Ready: ${questions.length} Questions Loaded`;
-            document.getElementById('db-source-name').textContent = file.name;
-
+            if (uploadZone) uploadZone.style.display = 'none';
+            if (readyZone) readyZone.style.display  = 'block';
+            const countEl = document.getElementById('db-question-count');
+            if (countEl) countEl.textContent = `${newTest.name || 'New Test'} — ${payload.count} questions loaded`;
+            const sourceEl = document.getElementById('db-source-name');
+            if (sourceEl) sourceEl.textContent = newTest.name || newTest.source || file.name;
+            if (statusEl) statusEl.textContent = `Uploaded ${file.name} as test '${newTest.name}'. ${payload.count} questions parsed.`;
             UI.showScreen('lobby');
         } catch (err) {
-            console.error('PDF parsing error', err);
-            alert('Failed to read PDF file: ' + err.message);
+            console.error('PDF upload error', err);
+            alert('Failed to upload PDF: ' + (err.message || 'unknown error'));
             UI.showScreen('lobby');
         }
     }
@@ -1656,23 +1760,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
     
-    // 5. Game Start Quest trigger
-    document.getElementById('start-game-btn').addEventListener('click', () => {
-        if (questionsDb.length === 0) return;
-        
+    // 5. Start Quest (only if present on this page) — navigates to the dedicated game page
+    const startGameBtn = document.getElementById('start-game-btn');
+    if (startGameBtn) startGameBtn.addEventListener('click', async () => {
+        // If a test selector exists on the page, this is the lobby/index — navigate to game page
+        const testSelect = document.getElementById('test-select');
+        if (testSelect) {
+            const selected = testSelect.value;
+            if (!selected) return;
+            localStorage.setItem('gcp_selected_test', selected);
+            window.location.href = 'game.html';
+            return;
+        }
+
+        // Otherwise this is the game page: ensure questions are loaded and start the game
+        const saved = localStorage.getItem('gcp_selected_test');
+        const loaded = await ensureSelectedTestLoaded(saved);
+
+        if (!loaded || !questionsDb || !questionsDb.length) {
+            alert('No questions loaded. Please go back to the lobby and select a test first.');
+            return;
+        }
+
         // Resume Audio context on user gesture
         sounds.init();
-        
+
         const activeModeBtn = document.querySelector('.mode-btn.active');
-        const mode = activeModeBtn.dataset.mode;
-        const timeLimit = document.getElementById('timer-select').value;
-        
-        let count = document.getElementById('question-count-select').value;
+        const mode = activeModeBtn ? activeModeBtn.dataset.mode : 'classic';
+        const timeLimit = document.getElementById('timer-select') ? document.getElementById('timer-select').value : 30;
+
+        let count = document.getElementById('question-count-select') ? document.getElementById('question-count-select').value : '10';
         if (mode === 'exam') count = '50';
         if (mode === 'endless') count = 'all';
-        
+
         currentGame = new QuizGame(questionsDb, mode, count, timeLimit);
-        
         UI.showScreen('game');
         UI.renderQuestion();
     });
@@ -1684,109 +1805,87 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    document.getElementById('open-history-btn').addEventListener('click', () => {
-        UI.renderHistory();
-        UI.showScreen('history');
-    });
+    const openHistoryBtn = document.getElementById('open-history-btn');
+    if (openHistoryBtn) openHistoryBtn.addEventListener('click', () => { UI.renderHistory(); UI.showScreen('history'); });
 
-    document.getElementById('export-history-pdf-btn').addEventListener('click', () => {
-        UI.exportHistoryPdf();
-    });
+    const exportHistoryPdfBtn = document.getElementById('export-history-pdf-btn');
+    if (exportHistoryPdfBtn) exportHistoryPdfBtn.addEventListener('click', () => UI.exportHistoryPdf());
 
-    document.getElementById('clear-history-btn').addEventListener('click', () => {
-        if (confirm('Clear all saved history? This cannot be undone.')) {
-            UI.clearHistory();
-        }
-    });
+    const clearHistoryBtn = document.getElementById('clear-history-btn');
+    if (clearHistoryBtn) clearHistoryBtn.addEventListener('click', () => { if (confirm('Clear all saved history? This cannot be undone.')) UI.clearHistory(); });
 
-    document.getElementById('close-history-btn').addEventListener('click', () => {
+    const closeHistoryBtn = document.getElementById('close-history-btn');
+    if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', () => { UI.showScreen('lobby'); UI.updateHeaderStats(); });
+
+    const backToGameBtn = document.getElementById('back-to-game-btn');
+    if (backToGameBtn) backToGameBtn.addEventListener('click', () => {
         UI.showScreen('lobby');
         UI.updateHeaderStats();
     });
 
-    document.getElementById('history-list').addEventListener('click', (event) => {
+    const historyListEl = document.getElementById('history-list');
+    if (historyListEl) historyListEl.addEventListener('click', (event) => {
         const button = event.target.closest('.history-entry');
         if (!button) return;
         const entryId = button.dataset.historyId;
-        if (entryId) {
-            UI.openHistoryEntry(entryId);
-        }
+        if (entryId) UI.openHistoryEntry(entryId);
     });
 
-    document.getElementById('export-history-entry-pdf-btn').addEventListener('click', () => {
-        UI.exportHistoryEntryPdf();
-    });
+    const exportHistoryEntryPdfBtn = document.getElementById('export-history-entry-pdf-btn');
+    if (exportHistoryEntryPdfBtn) exportHistoryEntryPdfBtn.addEventListener('click', () => UI.exportHistoryEntryPdf());
 
-    document.getElementById('back-history-btn').addEventListener('click', () => {
-        UI.showScreen('history');
-        UI.updateHeaderStats();
-    });
+    const backHistoryBtn = document.getElementById('back-history-btn');
+    if (backHistoryBtn) backHistoryBtn.addEventListener('click', () => { UI.showScreen('history'); UI.updateHeaderStats(); });
 
     const themeSelect = document.getElementById('theme-select');
-    if (themeSelect) {
-        themeSelect.addEventListener('change', (event) => {
-            UI.applyTheme(event.target.value);
-        });
-    }
+    if (themeSelect) themeSelect.addEventListener('change', (event) => UI.applyTheme(event.target.value));
 
-    document.getElementById('export-results-pdf-btn').addEventListener('click', () => {
-        UI.exportGameResultPdf();
-    });
-    
+    const exportResultsPdfBtn = document.getElementById('export-results-pdf-btn');
+    if (exportResultsPdfBtn) exportResultsPdfBtn.addEventListener('click', () => UI.exportGameResultPdf());
+
     // 6. Next Question click overlay actions
-    document.getElementById('next-question-btn').addEventListener('click', () => {
+    const nextQuestionBtn = document.getElementById('next-question-btn');
+    if (nextQuestionBtn) nextQuestionBtn.addEventListener('click', () => {
         if (!currentGame) return;
         const q = currentGame.getCurrentQuestion();
-        // If this is a multi-select question and answer not yet processed, submit selected options
         if (q && q.isMultiple && !currentGame.answerProcessed) {
             const selectedBtns = Array.from(document.querySelectorAll('.answer-card.multi-selected'));
             const letters = selectedBtns.map(b => b.dataset.option).join('');
-            if (!letters) return; // nothing selected yet
+            if (!letters) return;
             UI.handleAnswerSelect(letters);
-            return; // wait for user to click Next again to advance
+            return;
         }
-
-        // For single-choice require that an answer was already processed (by selecting an option)
         if (!currentGame.answerProcessed) return;
         UI.advanceGame();
     });
-    
+
     // 7. Leaderboard screen continuation trigger
-    document.getElementById('leaderboard-next-btn').addEventListener('click', () => {
+    const leaderboardNextBtn = document.getElementById('leaderboard-next-btn');
+    if (leaderboardNextBtn) leaderboardNextBtn.addEventListener('click', () => {
         const hasNext = currentGame.nextQuestion();
-        if (hasNext) {
-            UI.showScreen('game');
-            UI.renderQuestion();
-        } else {
-            UI.endGame();
-        }
+        if (hasNext) { UI.showScreen('game'); UI.renderQuestion(); } else { UI.endGame(); }
     });
-    
+
     // 8. Lifeline Hint button trigger
-    document.getElementById('lifeline-btn').addEventListener('click', () => {
-        UI.triggerLifeline();
-    });
-    
+    const lifelineBtn = document.getElementById('lifeline-btn');
+    if (lifelineBtn) lifelineBtn.addEventListener('click', () => UI.triggerLifeline());
+
     // 9. Post game actions
-    document.getElementById('restart-game-btn').addEventListener('click', () => {
-        // Restart with same config
+    const restartGameBtn = document.getElementById('restart-game-btn');
+    if (restartGameBtn) restartGameBtn.addEventListener('click', () => {
         const activeModeBtn = document.querySelector('.mode-btn.active');
-        const mode = activeModeBtn.dataset.mode;
-        const timeLimit = document.getElementById('timer-select').value;
-        
-        let count = document.getElementById('question-count-select').value;
+        const mode = activeModeBtn ? activeModeBtn.dataset.mode : 'classic';
+        const timeLimit = document.getElementById('timer-select') ? document.getElementById('timer-select').value : 30;
+        let count = document.getElementById('question-count-select') ? document.getElementById('question-count-select').value : '10';
         if (mode === 'exam') count = '50';
         if (mode === 'endless') count = 'all';
-        
         currentGame = new QuizGame(questionsDb, mode, count, timeLimit);
         UI.showScreen('game');
         UI.renderQuestion();
     });
-    
-    document.getElementById('back-lobby-btn').addEventListener('click', () => {
-        UI.showScreen('lobby');
-        UI.updateHeaderStats();
-    });
+
+    const backLobbyBtn = document.getElementById('back-lobby-btn');
+    if (backLobbyBtn) backLobbyBtn.addEventListener('click', () => { UI.showScreen('lobby'); UI.updateHeaderStats(); });
 
     const closeImagePopupBtn = document.getElementById('close-image-popup');
     if (closeImagePopupBtn) {

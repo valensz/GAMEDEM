@@ -1258,6 +1258,11 @@ pre.code-block {
     max-width: 920px;
     margin: 0 auto;
 }
+
+.results-card {
+    max-width: 960px;
+    margin: 0 auto;
+}
 .history-header {
     display: flex;
     justify-content: space-between;
@@ -1426,6 +1431,7 @@ button.history-entry:hover {
     display: flex;
     justify-content: center;
     gap: 15px;
+    flex-wrap: wrap;
 }
 
 /* Keyframes animations */
