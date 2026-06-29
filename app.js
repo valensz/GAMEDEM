@@ -101,6 +101,7 @@ const sounds = new SoundEngine();
 let questionsDb = [];
 let currentGame = null;
 let selectedTestId = null;
+let gameSessionActive = false;
 const referenceImageCache = new Map();
 
 async function fetchSharedQuestionDb(testId = null) {
@@ -649,6 +650,8 @@ const UI = {
             el.classList.toggle('active', key === screenKey);
         });
         
+        this.updateNavigationButtons();
+        
         // Ambient background morphs slowly based on screen
         const glow1 = document.querySelector('.glow-1');
         const glow2 = document.querySelector('.glow-2');
@@ -673,6 +676,35 @@ const UI = {
         body.classList.remove('theme-default', 'theme-crystal', 'theme-blossom', 'dark-theme');
         body.classList.add(`theme-${selected}`);
         localStorage.setItem('gcp_theme', selected);
+    },
+
+    updateNavigationButtons() {
+        const inSession = Boolean(gameSessionActive);
+        const buttons = [
+            document.getElementById('history-select-test-btn'),
+            document.getElementById('history-back-to-game-btn'),
+            document.getElementById('results-select-test-btn'),
+            document.getElementById('back-to-game-btn')
+        ];
+
+        buttons.forEach(btn => {
+            if (!btn) return;
+            btn.disabled = inSession;
+            btn.classList.toggle('is-disabled', inSession);
+        });
+    },
+
+    goToGameScreen() {
+        if (currentGame && currentGame.questions && currentGame.questions.length) {
+            this.showScreen('game');
+            this.renderQuestion();
+            return;
+        }
+        this.showScreen('lobby');
+    },
+
+    goToLobby() {
+        window.location.href = 'index.html';
     },
 
     initTheme() {
@@ -1590,6 +1622,8 @@ const UI = {
     
     // Game over screen setup
     endGame() {
+        gameSessionActive = false;
+        this.updateNavigationButtons();
         this.showScreen('gameOver');
         
         // Save statistics
@@ -1794,6 +1828,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (mode === 'endless') count = 'all';
 
         currentGame = new QuizGame(questionsDb, mode, count, timeLimit);
+        gameSessionActive = true;
+        UI.updateNavigationButtons();
         UI.showScreen('game');
         UI.renderQuestion();
     });
@@ -1817,9 +1853,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const closeHistoryBtn = document.getElementById('close-history-btn');
     if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', () => { UI.showScreen('lobby'); UI.updateHeaderStats(); });
 
+    const historySelectTestBtn = document.getElementById('history-select-test-btn');
+    if (historySelectTestBtn) historySelectTestBtn.addEventListener('click', () => UI.goToLobby());
+
+    const historyBackToGameBtn = document.getElementById('history-back-to-game-btn');
+    if (historyBackToGameBtn) historyBackToGameBtn.addEventListener('click', () => UI.goToGameScreen());
+
+    const resultsSelectTestBtn = document.getElementById('results-select-test-btn');
+    if (resultsSelectTestBtn) resultsSelectTestBtn.addEventListener('click', () => UI.goToLobby());
+
     const backToGameBtn = document.getElementById('back-to-game-btn');
     if (backToGameBtn) backToGameBtn.addEventListener('click', () => {
-        UI.showScreen('lobby');
+        UI.goToGameScreen();
         UI.updateHeaderStats();
     });
 
@@ -1880,6 +1925,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (mode === 'exam') count = '50';
         if (mode === 'endless') count = 'all';
         currentGame = new QuizGame(questionsDb, mode, count, timeLimit);
+        gameSessionActive = true;
+        UI.updateNavigationButtons();
         UI.showScreen('game');
         UI.renderQuestion();
     });
